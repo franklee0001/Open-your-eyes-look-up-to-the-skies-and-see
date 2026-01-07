@@ -1,0 +1,7 @@
+google-analytics-data
+google-auth
+google-ads
+pandas
+matplotlib
+jinja2
+python-dotenv

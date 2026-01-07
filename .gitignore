@@ -1,10 +1,14 @@
-
 # secrets
 .secrets/
 .env
+
+# outputs
 reports/
 
-# secrets
-.secrets/
-.env
-reports/
+# python
+.venv/
+__pycache__/
+*.pyc
+
+# os
+.DS_Store
