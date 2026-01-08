@@ -1,0 +1,332 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{{ report_title }}</title>
+  <style>
+    :root {
+      --accent: #2563eb;
+      --bg: #f4f6fb;
+      --surface: #ffffff;
+      --ink: #111827;
+      --muted: #6b7280;
+      --line: #e5e7eb;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: "Noto Sans KR", "Apple SD Gothic Neo", "Malgun Gothic", system-ui, sans-serif;
+      color: var(--ink);
+      background: radial-gradient(circle at 12% 10%, #eef2ff 0%, var(--bg) 48%, #f8fafc 100%);
+      line-height: 1.55;
+      letter-spacing: -0.01em;
+    }
+    .page {
+      max-width: 1280px;
+      margin: 32px auto 80px;
+      padding: 0 20px;
+    }
+    .header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 24px;
+      padding: 28px 30px;
+      border-radius: 18px;
+      background: var(--surface);
+      box-shadow: 0 12px 24px rgba(15, 23, 42, 0.08);
+      border: 1px solid rgba(37, 99, 235, 0.12);
+    }
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+    }
+    .logo {
+      width: 52px;
+      height: 52px;
+      object-fit: contain;
+    }
+    .title {
+      font-size: 24px;
+      font-weight: 700;
+    }
+    .subtitle {
+      color: var(--muted);
+      font-size: 14px;
+      margin-top: 4px;
+    }
+    .meta {
+      text-align: right;
+      font-size: 13px;
+      color: var(--muted);
+    }
+    .meta strong { color: var(--ink); }
+    .section {
+      margin-top: 28px;
+      background: var(--surface);
+      border-radius: 18px;
+      padding: 26px 28px;
+      border: 1px solid var(--line);
+      box-shadow: 0 10px 22px rgba(15, 23, 42, 0.06);
+    }
+    .section-title {
+      font-size: 18px;
+      font-weight: 700;
+      margin-bottom: 18px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .section-title::before {
+      content: "";
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      background: var(--accent);
+    }
+    .summary-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+      gap: 14px;
+      margin-bottom: 18px;
+    }
+    .kpi-card {
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      padding: 16px;
+      background: linear-gradient(180deg, rgba(37, 99, 235, 0.04) 0%, rgba(255, 255, 255, 0.4) 100%);
+    }
+    .kpi-label {
+      font-size: 12px;
+      color: var(--muted);
+      margin-bottom: 6px;
+    }
+    .kpi-value {
+      font-size: 22px;
+      font-weight: 700;
+    }
+    .kpi-sub {
+      font-size: 12px;
+      color: var(--muted);
+      margin-top: 4px;
+    }
+    .divider {
+      height: 1px;
+      background: var(--line);
+      margin: 18px 0;
+    }
+    .chart-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+      gap: 18px;
+    }
+    .chart-card {
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      padding: 16px;
+      background: #f9fafb;
+    }
+    .chart-title {
+      font-weight: 600;
+      font-size: 14px;
+      margin-bottom: 10px;
+    }
+    .chart-card img {
+      width: 100%;
+      height: 220px;
+      object-fit: contain;
+      background: #fff;
+      border-radius: 10px;
+      border: 1px solid #eef2f7;
+    }
+    .table-wrap {
+      overflow-x: auto;
+      border: 1px solid var(--line);
+      border-radius: 14px;
+    }
+    table {
+      border-collapse: collapse;
+      width: 100%;
+      min-width: 520px;
+    }
+    th, td {
+      padding: 12px 14px;
+      text-align: left;
+      font-size: 13px;
+      border-bottom: 1px solid var(--line);
+    }
+    th {
+      background: #111827;
+      color: #fff;
+      font-weight: 600;
+    }
+    tbody tr:hover { background: #f3f4f6; }
+    .note {
+      font-size: 12px;
+      color: var(--muted);
+      margin-top: 10px;
+    }
+    .footer-space { margin-top: 40px; }
+    @media (max-width: 720px) {
+      .header { flex-direction: column; align-items: flex-start; }
+      .meta { text-align: left; }
+      .chart-card img { height: 200px; }
+    }
+  </style>
+</head>
+<body>
+  <div class="page">
+    <header class="header">
+      <div class="brand">
+        <picture>
+          <source srcset="{{ logo_svg_path }}" type="image/svg+xml">
+          <img class="logo" src="{{ logo_png_path }}" alt="HueLight 로고">
+        </picture>
+        <div>
+          <div class="title">{{ report_title }}</div>
+          <div class="subtitle">기간: {{ period_start }} ~ {{ period_end }}</div>
+        </div>
+      </div>
+      <div class="meta">
+        <div><strong>생성 시각</strong> {{ generated_at }}</div>
+        <div><strong>기준 시간대</strong> Asia/Seoul</div>
+      </div>
+    </header>
+
+    {% macro summary_block(title) %}
+    <section class="section">
+      <div class="section-title">{{ title }}</div>
+      <div class="section-title">금일 KPI</div>
+      <div class="summary-grid">
+        {% for card in summary.today_cards %}
+        <div class="kpi-card">
+          <div class="kpi-label">{{ card.label }}</div>
+          <div class="kpi-value">{{ card.value }}{% if card.unit %}<span class="kpi-unit">{{ card.unit }}</span>{% endif %}</div>
+          {% if card.sub %}<div class="kpi-sub">{{ card.sub }}</div>{% endif %}
+        </div>
+        {% endfor %}
+      </div>
+      <div class="divider"></div>
+      <div class="section-title">최근 30일 요약</div>
+      <div class="summary-grid">
+        {% for card in summary.last_30_cards %}
+        <div class="kpi-card">
+          <div class="kpi-label">{{ card.label }}</div>
+          <div class="kpi-value">{{ card.value }}{% if card.unit %}<span class="kpi-unit">{{ card.unit }}</span>{% endif %}</div>
+          {% if card.sub %}<div class="kpi-sub">{{ card.sub }}</div>{% endif %}
+        </div>
+        {% endfor %}
+      </div>
+      <div class="divider"></div>
+      <div class="section-title">전체기간 요약</div>
+      <div class="summary-grid">
+        {% for card in summary.all_time_cards %}
+        <div class="kpi-card">
+          <div class="kpi-label">{{ card.label }}</div>
+          <div class="kpi-value">{{ card.value }}{% if card.unit %}<span class="kpi-unit">{{ card.unit }}</span>{% endif %}</div>
+          {% if card.sub %}<div class="kpi-sub">{{ card.sub }}</div>{% endif %}
+        </div>
+        {% endfor %}
+      </div>
+      <div class="note">데이터 범위: {{ period_start }} ~ {{ period_end }} ({{ summary.total_days }}일)</div>
+    </section>
+    {% endmacro %}
+
+    {{ summary_block("요약") }}
+
+    <section class="section">
+      <div class="section-title">일별 추이 그래프 (오늘 포함)</div>
+      <div class="chart-grid">
+        {% for chart in charts %}
+        <div class="chart-card">
+          <div class="chart-title">{{ chart.title }}</div>
+          <img src="{{ chart.path }}" alt="{{ chart.title }} 그래프">
+        </div>
+        {% endfor %}
+      </div>
+      <div class="note">기본 그래프는 최근 30일 기준이며, 전체기간 누적/평균 수치는 요약 섹션에 반영했습니다.</div>
+    </section>
+
+    <section class="section">
+      <div class="section-title">상위 테이블</div>
+      <div class="chart-grid">
+        <div>
+          <div class="chart-title">GA4 상위 랜딩페이지 (최근 30일)</div>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  {% for header in tables.landing_pages.headers %}
+                  <th>{{ header }}</th>
+                  {% endfor %}
+                </tr>
+              </thead>
+              <tbody>
+                {% for row in tables.landing_pages.rows %}
+                <tr>
+                  {% for cell in row %}
+                  <td>{{ cell }}</td>
+                  {% endfor %}
+                </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+        </div>
+        <div>
+          <div class="chart-title">GA4 상위 소스/미디엄 (최근 30일)</div>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  {% for header in tables.source_medium.headers %}
+                  <th>{{ header }}</th>
+                  {% endfor %}
+                </tr>
+              </thead>
+              <tbody>
+                {% for row in tables.source_medium.rows %}
+                <tr>
+                  {% for cell in row %}
+                  <td>{{ cell }}</td>
+                  {% endfor %}
+                </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+      <div class="divider"></div>
+      <div>
+        <div class="chart-title">Ads 상위 캠페인 (최근 30일)</div>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                {% for header in tables.ads_campaigns.headers %}
+                <th>{{ header }}</th>
+                {% endfor %}
+              </tr>
+            </thead>
+            <tbody>
+              {% for row in tables.ads_campaigns.rows %}
+              <tr>
+                {% for cell in row %}
+                <td>{{ cell }}</td>
+                {% endfor %}
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <div class="footer-space"></div>
+
+    {{ summary_block("하단 요약") }}
+  </div>
+</body>
+</html>
