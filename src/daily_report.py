@@ -27,6 +27,8 @@ def set_korean_font():
     preferred_fonts = []
     if sys.platform == "darwin":
         preferred_fonts.extend(["AppleGothic", "Apple SD Gothic Neo"])
+    elif sys.platform.startswith("win"):
+        preferred_fonts.extend(["Malgun Gothic"])
     elif sys.platform.startswith("linux"):
         preferred_fonts.extend(["Noto Sans CJK KR", "NanumGothic"])
 

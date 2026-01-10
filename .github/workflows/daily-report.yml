@@ -2,6 +2,9 @@ name: Daily GA4/Ads Report
 
 on:
   workflow_dispatch:
+  push:
+    branches:
+      - main
   schedule:
     # 09:10 KST = 00:10 UTC
     - cron: "10 0 * * *"
@@ -86,10 +89,11 @@ jobs:
             cp -R assets/. site/assets/
           fi
 
-          # 오늘 리포트를 site/reports 아래에 유지하고, 루트는 리디렉트 처리
+          # 오늘 리포트를 site/reports 아래에 유지하고, 루트도 동일한 HTML/자산으로 복제
           if [ -d "reports/${TODAY}" ]; then
             mkdir -p "site/reports/${TODAY}"
             cp -r "reports/${TODAY}/." "site/reports/${TODAY}/"
+            cp -r "reports/${TODAY}/." site/
           else
             echo "No reports/${TODAY} directory found."
             ls -la reports || true
@@ -99,21 +103,6 @@ jobs:
           # 히스토리 폴더도 같이 제공
           mkdir -p site/reports
           cp -r reports/* site/reports/ || true
-
-          cat > site/index.html <<EOF
-          <!DOCTYPE html>
-          <html lang="ko">
-          <head>
-            <meta charset="UTF-8">
-            <meta http-equiv="refresh" content="0; url=./reports/${TODAY}/">
-            <script>location.replace("./reports/${TODAY}/");</script>
-            <title>리포트 이동 중</title>
-          </head>
-          <body>
-            <p>리포트로 이동 중입니다. <a href="./reports/${TODAY}/">바로가기</a></p>
-          </body>
-          </html>
-          EOF
 
           touch site/.nojekyll
 

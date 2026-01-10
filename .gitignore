@@ -5,6 +5,7 @@
 # outputs
 reports/
 /index.html
+site/
 
 # python
 .venv/
