@@ -83,6 +83,19 @@ def format_currency(value: float) -> str:
     return f"₩{value:,.0f}"
 
 
+def format_delta(current: float, previous: float) -> str | None:
+    if previous == 0:
+        return None
+    delta = (current - previous) / previous * 100
+    if delta > 0:
+        arrow = "↑"
+    elif delta < 0:
+        arrow = "↓"
+    else:
+        arrow = "→"
+    return f"{arrow}{abs(delta):.0f}%"
+
+
 def iso_date_range(start: date, end: date) -> list[str]:
     days = (end - start).days + 1
     return [(start + timedelta(days=offset)).isoformat() for offset in range(days)]
@@ -176,11 +189,23 @@ class ReportGenerator:
         prev_7_end = last_7_start - timedelta(days=1)
         prev_7_start = max(start, prev_7_end - timedelta(days=6))
         prev_7_dates = safe_date_range(prev_7_start, prev_7_end) if last_7_dates else []
+        prev_30_end = last_30_complete_start - timedelta(days=1)
+        prev_30_start = max(start, prev_30_end - timedelta(days=29))
+        prev_30_dates = safe_date_range(prev_30_start, prev_30_end) if last_30_complete_dates else []
 
         ga4_daily, ga4_has_data = self._get_ga4_daily_series(self.start_date, self.end_date, all_dates)
         ads_daily, ads_has_data, has_conv_value = self._get_ads_daily_series(self.start_date, self.end_date, all_dates)
 
-        summary = self._build_summary(ga4_daily, ads_daily, last_30_dates, all_dates, has_conv_value)
+        summary = self._build_summary(
+            ga4_daily,
+            ads_daily,
+            last_7_dates,
+            prev_7_dates,
+            last_30_complete_dates,
+            prev_30_dates,
+            all_dates,
+            has_conv_value,
+        )
         tables = self._build_tables(last_30_start.isoformat(), self.end_date)
         ai_summary = self._build_ai_summary(
             ga4_daily,
@@ -197,11 +222,18 @@ class ReportGenerator:
             "end": last_7_end.isoformat(),
             "total_active": 0,
             "total_active_display": format_int(0),
+            "top10": [],
         }
         keyword_tables = self._get_ads_keyword_tables(last_7_start, last_7_end, last_30_complete_start, last_30_end)
         search_terms = self._get_ads_search_term_waste(last_7_start, last_7_end)
         wasted_summary = self._build_wasted_summary(last_7_dates, ads_daily, keyword_tables, search_terms)
         conversion_definitions = self._get_conversion_definitions(last_30_complete_start, last_30_end)
+        landing_page_stats = self._get_ads_landing_page_stats(last_7_start, last_7_end)
+        device_stats = self._get_device_stats(last_7_start, last_7_end)
+        weekday_stats = self._get_weekday_conversions(last_7_start, last_7_end)
+        heatmap_stats = self._get_hour_weekday_heatmap(last_7_start, last_7_end)
+        today_line = self._build_today_line(self.end_date, ads_daily, wasted_summary)
+        action_cards = self._build_action_cards(keyword_tables, search_terms)
         exec_summary = self._build_executive_summary(
             last_7_dates,
             prev_7_dates,
@@ -210,6 +242,19 @@ class ReportGenerator:
             wasted_summary,
             keyword_tables,
             search_terms,
+        )
+        extra_chart_specs = self._build_extra_chart_specs(
+            ga4_daily,
+            ads_daily,
+            last_7_dates,
+            prev_7_dates,
+            keyword_tables,
+            search_terms,
+            geo_map,
+            landing_page_stats,
+            device_stats,
+            weekday_stats,
+            heatmap_stats,
         )
 
         return {
@@ -223,6 +268,13 @@ class ReportGenerator:
             "wasted_summary": wasted_summary,
             "conversion_definitions": conversion_definitions,
             "exec_summary": exec_summary,
+            "today_line": today_line,
+            "action_cards": action_cards,
+            "landing_page_stats": landing_page_stats,
+            "device_stats": device_stats,
+            "weekday_stats": weekday_stats,
+            "heatmap_stats": heatmap_stats,
+            "extra_chart_specs": extra_chart_specs,
         }
 
     def _get_ga4_daily_series(self, start_date: str, end_date: str, all_dates: list[str]) -> tuple[dict, bool]:
@@ -287,7 +339,10 @@ class ReportGenerator:
         self,
         ga4_daily: dict,
         ads_daily: dict,
+        last_7_dates: list[str],
+        prev_7_dates: list[str],
         last_30_dates: list[str],
+        prev_30_dates: list[str],
         all_dates: list[str],
         has_conv_value: bool,
     ) -> dict:
@@ -349,12 +404,36 @@ class ReportGenerator:
             "ads_roas": safe_div(today_ads["conversion_value"], today_ads["cost"]) if has_conv_value else None,
         }
 
+        last_7_totals = sum_series(last_7_dates)
+        last_7_totals["ads_ctr"] = safe_div(last_7_totals["ads_clicks"], last_7_totals["ads_impressions"]) * 100
+        last_7_totals["ads_cpc"] = safe_div(last_7_totals["ads_cost"], last_7_totals["ads_clicks"])
+        last_7_totals["ads_cpa"] = safe_div(last_7_totals["ads_cost"], last_7_totals["ads_conversions"])
+        last_7_totals["ads_roas"] = (
+            safe_div(last_7_totals["ads_conversion_value"], last_7_totals["ads_cost"]) if has_conv_value else None
+        )
+
+        prev_7_totals = sum_series(prev_7_dates)
+        prev_7_totals["ads_ctr"] = safe_div(prev_7_totals["ads_clicks"], prev_7_totals["ads_impressions"]) * 100
+        prev_7_totals["ads_cpc"] = safe_div(prev_7_totals["ads_cost"], prev_7_totals["ads_clicks"])
+        prev_7_totals["ads_cpa"] = safe_div(prev_7_totals["ads_cost"], prev_7_totals["ads_conversions"])
+        prev_7_totals["ads_roas"] = (
+            safe_div(prev_7_totals["ads_conversion_value"], prev_7_totals["ads_cost"]) if has_conv_value else None
+        )
+
         last_30_totals = sum_series(last_30_dates)
         last_30_totals["ads_ctr"] = safe_div(last_30_totals["ads_clicks"], last_30_totals["ads_impressions"]) * 100
         last_30_totals["ads_cpc"] = safe_div(last_30_totals["ads_cost"], last_30_totals["ads_clicks"])
         last_30_totals["ads_cpa"] = safe_div(last_30_totals["ads_cost"], last_30_totals["ads_conversions"])
         last_30_totals["ads_roas"] = (
             safe_div(last_30_totals["ads_conversion_value"], last_30_totals["ads_cost"]) if has_conv_value else None
+        )
+
+        prev_30_totals = sum_series(prev_30_dates)
+        prev_30_totals["ads_ctr"] = safe_div(prev_30_totals["ads_clicks"], prev_30_totals["ads_impressions"]) * 100
+        prev_30_totals["ads_cpc"] = safe_div(prev_30_totals["ads_cost"], prev_30_totals["ads_clicks"])
+        prev_30_totals["ads_cpa"] = safe_div(prev_30_totals["ads_cost"], prev_30_totals["ads_conversions"])
+        prev_30_totals["ads_roas"] = (
+            safe_div(prev_30_totals["ads_conversion_value"], prev_30_totals["ads_cost"]) if has_conv_value else None
         )
 
         all_totals = sum_series(all_dates)
@@ -365,18 +444,44 @@ class ReportGenerator:
             safe_div(all_totals["ads_conversion_value"], all_totals["ads_cost"]) if has_conv_value else None
         )
 
-        yesterday_cards = self._format_cards(yesterday_metrics, has_conv_value)
-        today_cards = self._format_cards(today_metrics, has_conv_value)
-        last_30_cards = self._format_cards(last_30_totals, has_conv_value)
+        day_before_key = (datetime.strptime(yesterday_key, "%Y-%m-%d").date() - timedelta(days=1)).isoformat()
+        day_before_ga4 = ga4_daily.get(day_before_key, {"sessions": 0, "activeUsers": 0})
+        day_before_ads = ads_daily.get(day_before_key, {
+            "cost": 0.0,
+            "impressions": 0,
+            "clicks": 0,
+            "conversions": 0.0,
+            "conversion_value": 0.0,
+        })
+        day_before_metrics = {
+            "ga4_sessions": day_before_ga4["sessions"],
+            "ga4_active_users": day_before_ga4["activeUsers"],
+            "ads_cost": day_before_ads["cost"],
+            "ads_impressions": day_before_ads["impressions"],
+            "ads_clicks": day_before_ads["clicks"],
+            "ads_conversions": day_before_ads["conversions"],
+            "ads_ctr": safe_div(day_before_ads["clicks"], day_before_ads["impressions"]) * 100,
+            "ads_cpc": safe_div(day_before_ads["cost"], day_before_ads["clicks"]),
+            "ads_cpa": safe_div(day_before_ads["cost"], day_before_ads["conversions"]),
+            "ads_roas": safe_div(day_before_ads["conversion_value"], day_before_ads["cost"]) if has_conv_value else None,
+        }
+
+        yesterday_cards = self._format_cards_with_delta(yesterday_metrics, day_before_metrics, has_conv_value)
+        today_cards = self._format_cards_with_delta(today_metrics, yesterday_metrics, has_conv_value)
+        last_7_cards = self._format_cards_with_delta(last_7_totals, prev_7_totals, has_conv_value)
+        last_30_cards = self._format_cards_with_delta(last_30_totals, prev_30_totals, has_conv_value)
         all_time_cards = self._format_cards(all_totals, has_conv_value, include_avg=True, days=len(all_dates))
 
         return {
             "yesterday_cards": yesterday_cards,
             "today_cards": today_cards,
+            "last_7_cards": last_7_cards,
             "last_30_cards": last_30_cards,
             "all_time_cards": all_time_cards,
             "total_days": len(all_dates),
             "yesterday_date": yesterday_key,
+            "last_7_range": f"{last_7_dates[0]} ~ {last_7_dates[-1]}" if last_7_dates else "-",
+            "last_30_range": f"{last_30_dates[0]} ~ {last_30_dates[-1]}" if last_30_dates else "-",
         }
 
     def _format_cards(self, metrics: dict, has_conv_value: bool, include_avg: bool = False, days: int = 1) -> list[dict]:
@@ -433,6 +538,40 @@ class ReportGenerator:
                 "unit": unit_text,
                 "sub": sub,
             })
+        return cards
+
+    def _format_cards_with_delta(
+        self,
+        metrics: dict,
+        compare_metrics: dict | None,
+        has_conv_value: bool,
+    ) -> list[dict]:
+        cards = []
+        for card in self._format_cards(metrics, has_conv_value):
+            key = None
+            for k, label, _ in [
+                ("ga4_sessions", "GA4 세션", "회"),
+                ("ga4_active_users", "GA4 활성 사용자", "명"),
+                ("ads_cost", "광고 비용", "원"),
+                ("ads_impressions", "광고 노출", "회"),
+                ("ads_clicks", "광고 클릭", "회"),
+                ("ads_conversions", "광고 전환", "건"),
+                ("ads_ctr", "광고 클릭률", "%"),
+                ("ads_cpc", "클릭당 비용", "원"),
+                ("ads_cpa", "전환당 비용", "원"),
+                ("ads_roas", "광고 수익률", "배"),
+            ]:
+                if label == card["label"]:
+                    key = k
+                    break
+            delta = None
+            if key and compare_metrics is not None:
+                current = metrics.get(key, 0)
+                previous = compare_metrics.get(key, 0)
+                if isinstance(current, (int, float)) and isinstance(previous, (int, float)):
+                    delta = format_delta(current, previous)
+            card["delta"] = delta
+            cards.append(card)
         return cards
 
     def _build_ai_summary(
@@ -556,6 +695,7 @@ class ReportGenerator:
             total_active += active_users
             data_rows.append([country, active_users])
         data_rows.sort(key=lambda x: x[1], reverse=True)
+        top10 = data_rows[:10]
         chart_data = [["국가", "활성 사용자"]] + data_rows
         return {
             "has_data": bool(data_rows),
@@ -564,6 +704,10 @@ class ReportGenerator:
             "end": end,
             "total_active": total_active,
             "total_active_display": format_int(total_active),
+            "top10": [
+                {"country": row[0], "active": row[1], "active_display": format_int(row[1])}
+                for row in top10
+            ],
         }
 
     def _get_ads_keyword_rows(self, start_date: date, end_date: date) -> list[dict]:
@@ -608,6 +752,11 @@ class ReportGenerator:
             "EXACT": "일치",
         }
         return mapping.get(match_type, "기타")
+
+    def _short_label(self, value: str, limit: int = 20) -> str:
+        if len(value) <= limit:
+            return value
+        return f"{value[:limit]}…"
 
     def _format_keyword_table(self, rows: list[dict]) -> dict:
         headers = [
@@ -757,6 +906,165 @@ class ReportGenerator:
             },
         }
 
+    def _get_ads_landing_page_stats(self, start_date: date, end_date: date) -> list[dict]:
+        if start_date > end_date:
+            return []
+        query = (
+            "SELECT campaign.advertising_channel_type, landing_page_view.unexpanded_final_url, "
+            "metrics.conversions, metrics.cost_micros, metrics.cost_per_conversion "
+            "FROM landing_page_view "
+            f"WHERE segments.date BETWEEN '{start_date.isoformat()}' AND '{end_date.isoformat()}' "
+            "AND campaign.advertising_channel_type = 'SEARCH'"
+        )
+        try:
+            rows = self.ads.run_query(query)
+        except Exception:
+            return []
+        results = []
+        for row in rows:
+            url = row.landing_page_view.unexpanded_final_url or ""
+            results.append({
+                "url": url,
+                "conversions": row.metrics.conversions,
+                "cost_micros": row.metrics.cost_micros,
+                "cpa_micros": row.metrics.cost_per_conversion,
+            })
+        return results
+
+    def _get_device_stats(self, start_date: date, end_date: date) -> list[dict]:
+        if start_date > end_date:
+            return []
+        query = (
+            "SELECT segments.device, metrics.conversions, metrics.cost_micros "
+            "FROM customer "
+            f"WHERE segments.date BETWEEN '{start_date.isoformat()}' AND '{end_date.isoformat()}'"
+        )
+        try:
+            rows = self.ads.run_query(query)
+        except Exception:
+            return []
+        mapping = {
+            "MOBILE": "모바일",
+            "DESKTOP": "데스크톱",
+            "TABLET": "태블릿",
+        }
+        results = []
+        for row in rows:
+            device = mapping.get(str(row.segments.device), "기타")
+            results.append({
+                "device": device,
+                "conversions": row.metrics.conversions,
+                "cost_micros": row.metrics.cost_micros,
+            })
+        return results
+
+    def _get_weekday_conversions(self, start_date: date, end_date: date) -> list[dict]:
+        if start_date > end_date:
+            return []
+        query = (
+            "SELECT segments.day_of_week, metrics.conversions "
+            "FROM customer "
+            f"WHERE segments.date BETWEEN '{start_date.isoformat()}' AND '{end_date.isoformat()}'"
+        )
+        try:
+            rows = self.ads.run_query(query)
+        except Exception:
+            return []
+        mapping = {
+            "MONDAY": "월",
+            "TUESDAY": "화",
+            "WEDNESDAY": "수",
+            "THURSDAY": "목",
+            "FRIDAY": "금",
+            "SATURDAY": "토",
+            "SUNDAY": "일",
+        }
+        results = []
+        for row in rows:
+            results.append({
+                "weekday": mapping.get(str(row.segments.day_of_week), "기타"),
+                "conversions": row.metrics.conversions,
+            })
+        return results
+
+    def _get_hour_weekday_heatmap(self, start_date: date, end_date: date) -> dict:
+        if start_date > end_date:
+            return {"labels": [], "matrix": []}
+        query = (
+            "SELECT segments.day_of_week, segments.hour, metrics.conversions "
+            "FROM customer "
+            f"WHERE segments.date BETWEEN '{start_date.isoformat()}' AND '{end_date.isoformat()}'"
+        )
+        try:
+            rows = self.ads.run_query(query)
+        except Exception:
+            return {"labels": [], "matrix": []}
+        mapping = {
+            "MONDAY": "월",
+            "TUESDAY": "화",
+            "WEDNESDAY": "수",
+            "THURSDAY": "목",
+            "FRIDAY": "금",
+            "SATURDAY": "토",
+            "SUNDAY": "일",
+        }
+        weekdays = ["월", "화", "수", "목", "금", "토", "일"]
+        matrix = [[0 for _ in range(24)] for _ in weekdays]
+        for row in rows:
+            day = mapping.get(str(row.segments.day_of_week))
+            hour = row.segments.hour
+            if day is None:
+                continue
+            try:
+                hour = int(hour)
+            except Exception:
+                continue
+            if 0 <= hour <= 23:
+                matrix[weekdays.index(day)][hour] += row.metrics.conversions
+        return {"labels": weekdays, "matrix": matrix}
+
+    def _build_today_line(self, today_key: str, ads_daily: dict, wasted_summary: dict) -> str:
+        today_ads = ads_daily.get(today_key, {"cost": 0.0, "conversions": 0.0})
+        top_item = wasted_summary["top_items"][0] if wasted_summary["top_items"] else "낭비 항목 없음"
+        return (
+            f"오늘 광고는 전환 {format_float(today_ads['conversions'], 1)}건, "
+            f"비용 {format_currency(today_ads['cost'])}, "
+            f"낭비 키워드 {top_item}가 큼."
+        )
+
+    def _build_action_cards(self, keyword_tables: dict, search_terms: dict) -> list[dict]:
+        wasted_items = search_terms["rows"] if search_terms["rows"] else [
+            row for row in keyword_tables["last_7"]["rows"]
+            if row["conversions"] == 0 and row["cost_micros"] > 0
+        ]
+        pause_candidates = ", ".join(
+            self._short_label(item.get("term") or item.get("keyword") or "낭비 항목")
+            for item in wasted_items[:3]
+        ) or "없음"
+
+        negative_candidates = ", ".join(
+            self._short_label(item.get("term") or "")
+            for item in search_terms["rows"][:3]
+        ) or "데이터 없음"
+
+        best_keywords = []
+        for row in keyword_tables["last_7"]["rows"]:
+            if row["conversions"] > 0:
+                cost = row["cost_micros"] / 1_000_000
+                cpa = safe_div(cost, row["conversions"])
+                best_keywords.append((row["keyword"], cpa))
+        best_keywords.sort(key=lambda x: x[1])
+        budget_candidates = ", ".join(
+            f"{self._short_label(name)}({format_currency(cpa)})"
+            for name, cpa in best_keywords[:3]
+        ) or "데이터 없음"
+
+        return [
+            {"title": "Pause 후보", "desc": pause_candidates},
+            {"title": "네거티브 후보", "desc": negative_candidates},
+            {"title": "예산 강화 후보", "desc": budget_candidates},
+        ]
+
     def _build_wasted_summary(self, last_7_dates: list[str], ads_daily: dict, keyword_tables: dict, search_terms: dict) -> dict:
         total_cost = sum(ads_daily[d]["cost"] for d in last_7_dates) if last_7_dates else 0.0
         wasted_cost = 0.0
@@ -777,14 +1085,9 @@ class ReportGenerator:
         wasted_share = safe_div(wasted_cost, total_cost) * 100 if total_cost else 0.0
         top_items = []
         top_sum = 0.0
-        def short_label(value: str) -> str:
-            if len(value) <= 20:
-                return value
-            return f"{value[:20]}…"
-
         for item in wasted_items[:3]:
             label = item.get("term") or item.get("keyword") or "낭비 항목"
-            top_items.append(short_label(label))
+            top_items.append(self._short_label(label))
             top_sum += item["cost_micros"] / 1_000_000
         return {
             "start": search_terms["start"],
@@ -962,13 +1265,182 @@ class ReportGenerator:
         ]
         for item in wasted_items[:3]:
             label = item.get("term") or item.get("keyword") or "낭비 항목"
-            pause_items.append(label[:20] + "…" if len(label) > 20 else label)
+            pause_items.append(self._short_label(label))
         pause_line = "즉시 조치: Pause 후보 3개: " + (", ".join(pause_items) if pause_items else "없음")
 
         return {
             "range": date_range,
             "lines": [change_line, wasted_sum_line, pause_line],
         }
+
+    def _build_extra_chart_specs(
+        self,
+        ga4_daily: dict,
+        ads_daily: dict,
+        last_7_dates: list[str],
+        prev_7_dates: list[str],
+        keyword_tables: dict,
+        search_terms: dict,
+        geo_map: dict,
+        landing_page_stats: list[dict],
+        device_stats: list[dict],
+        weekday_stats: list[dict],
+        heatmap_stats: dict,
+    ) -> dict:
+        specs: dict[str, dict] = {}
+
+        def sum_ga4(dates: list[str]) -> tuple[float, float]:
+            sessions = sum(ga4_daily[d]["sessions"] for d in dates) if dates else 0
+            active = sum(ga4_daily[d]["activeUsers"] for d in dates) if dates else 0
+            return sessions, active
+
+        def sum_ads(dates: list[str]) -> tuple[float, float]:
+            cost = sum(ads_daily[d]["cost"] for d in dates) if dates else 0.0
+            conversions = sum(ads_daily[d]["conversions"] for d in dates) if dates else 0.0
+            return cost, conversions
+
+        if last_7_dates and prev_7_dates:
+            last_sessions, last_active = sum_ga4(last_7_dates)
+            prev_sessions, prev_active = sum_ga4(prev_7_dates)
+            last_cost, last_conversions = sum_ads(last_7_dates)
+            prev_cost, prev_conversions = sum_ads(prev_7_dates)
+            last_cpa = safe_div(last_cost, last_conversions)
+            prev_cpa = safe_div(prev_cost, prev_conversions)
+            values = [
+                (last_sessions, prev_sessions),
+                (last_active, prev_active),
+                (last_cost, prev_cost),
+                (last_conversions, prev_conversions),
+                (last_cpa, prev_cpa),
+            ]
+            deltas = []
+            for current, previous in values:
+                if previous == 0:
+                    deltas.append(0)
+                else:
+                    deltas.append((current - previous) / previous * 100)
+            specs["week_scoreboard"] = {
+                "type": "bar",
+                "title": "이번 주 한 장 요약 (전주 대비 %)",
+                "labels": ["세션", "활성", "비용", "전환", "전환당 비용"],
+                "values": deltas,
+                "has_data": True,
+            }
+
+        if geo_map.get("top10"):
+            labels = [row["country"] for row in geo_map["top10"]]
+            values = [row["active"] for row in geo_map["top10"]]
+            specs["countries_top10"] = {
+                "type": "bar",
+                "title": "국가별 상위 10",
+                "labels": labels,
+                "values": values,
+                "has_data": True,
+            }
+
+        wasted_keywords = [
+            row for row in keyword_tables["last_7"]["rows"]
+            if row["conversions"] == 0 and row["cost_micros"] > 0
+        ]
+        wasted_keywords = sorted(wasted_keywords, key=lambda r: r["cost_micros"], reverse=True)[:10]
+        if wasted_keywords:
+            specs["waste_keywords_top10"] = {
+                "type": "barh",
+                "title": "전환 0 키워드 비용 TOP 10",
+                "labels": [self._short_label(row["keyword"]) for row in wasted_keywords],
+                "values": [row["cost_micros"] / 1_000_000 for row in wasted_keywords],
+                "has_data": True,
+            }
+
+        wasted_queries = sorted(search_terms["rows"], key=lambda r: r["cost_micros"], reverse=True)[:10]
+        if wasted_queries:
+            specs["waste_queries_top10"] = {
+                "type": "barh",
+                "title": "전환 0 검색어 비용 TOP 10",
+                "labels": [self._short_label(row["term"]) for row in wasted_queries],
+                "values": [row["cost_micros"] / 1_000_000 for row in wasted_queries],
+                "has_data": True,
+            }
+
+        best_keywords = []
+        for row in keyword_tables["last_7"]["rows"]:
+            if row["conversions"] > 0:
+                cost = row["cost_micros"] / 1_000_000
+                cpa = safe_div(cost, row["conversions"])
+                best_keywords.append((row["keyword"], cpa))
+        best_keywords.sort(key=lambda x: x[1])
+        if best_keywords:
+            top = best_keywords[:10]
+            specs["growth_keywords_cpa_top10"] = {
+                "type": "barh",
+                "title": "전환당 비용 낮은 키워드 TOP 10",
+                "labels": [self._short_label(row[0]) for row in top],
+                "values": [row[1] for row in top],
+                "has_data": True,
+            }
+
+        landing_rows = [
+            row for row in landing_page_stats
+            if row["conversions"] > 0 and row["cost_micros"] > 0
+        ]
+        landing_rows.sort(key=lambda r: r["conversions"], reverse=True)
+        if landing_rows:
+            top = landing_rows[:10]
+            specs["growth_landing_cpa_top10"] = {
+                "type": "dual_bar",
+                "title": "랜딩페이지 전환/전환당 비용 TOP 10",
+                "labels": [self._short_label(row["url"]) for row in top],
+                "values_left": [row["conversions"] for row in top],
+                "values_right": [row["cost_micros"] / 1_000_000 / row["conversions"] for row in top],
+                "has_data": True,
+            }
+
+        if device_stats:
+            device_map = {}
+            for row in device_stats:
+                device = row["device"]
+                if device not in device_map:
+                    device_map[device] = {"conversions": 0.0, "cost_micros": 0}
+                device_map[device]["conversions"] += row["conversions"]
+                device_map[device]["cost_micros"] += row["cost_micros"]
+            labels = list(device_map.keys())
+            conversions = [device_map[d]["conversions"] for d in labels]
+            cpa = [
+                safe_div(device_map[d]["cost_micros"] / 1_000_000, device_map[d]["conversions"])
+                for d in labels
+            ]
+            specs["device_cpa_compare"] = {
+                "type": "device_compare",
+                "title": "기기별 전환/전환당 비용",
+                "labels": labels,
+                "values_left": conversions,
+                "values_right": cpa,
+                "has_data": True,
+            }
+
+        if weekday_stats:
+            weekday_order = ["월", "화", "수", "목", "금", "토", "일"]
+            values_map = {row["weekday"]: row["conversions"] for row in weekday_stats}
+            specs["weekday_conversions"] = {
+                "type": "bar",
+                "title": "요일별 전환",
+                "labels": weekday_order,
+                "values": [values_map.get(day, 0) for day in weekday_order],
+                "has_data": True,
+            }
+
+        if heatmap_stats.get("matrix"):
+            total = sum(sum(row) for row in heatmap_stats["matrix"])
+            if total > 0:
+                specs["hour_weekday_heatmap"] = {
+                    "type": "heatmap",
+                    "title": "시간대별 전환(요일)",
+                    "labels": heatmap_stats["labels"],
+                    "matrix": heatmap_stats["matrix"],
+                    "has_data": True,
+                }
+
+        return specs
 
     def _build_tables(self, start_date: str, end_date: str) -> dict:
         landing_rows = self.ga4.run_report(
@@ -1152,6 +1624,8 @@ class ReportGenerator:
     def generate_charts(self, output_dir: Path, charts: list[dict]):
         output_dir.mkdir(parents=True, exist_ok=True)
         for chart in charts:
+            if not chart.get("has_data"):
+                continue
             path = output_dir / chart["filename"]
             self._plot_chart(
                 path,
@@ -1171,23 +1645,6 @@ class ReportGenerator:
         value_type: str,
         has_data: bool,
     ):
-        if not has_data:
-            fig, ax = plt.subplots(figsize=(6.8, 3.2), dpi=150)
-            ax.axis("off")
-            ax.text(
-                0.5,
-                0.5,
-                "데이터 없음",
-                ha="center",
-                va="center",
-                fontsize=12,
-                color="#6b7280",
-            )
-            fig.tight_layout()
-            fig.savefig(path, bbox_inches="tight")
-            plt.close(fig)
-            return
-
         fig, ax = plt.subplots(figsize=(6.8, 3.2), dpi=150)
         ax.plot(dates, values, color=ACCENT_COLOR, linewidth=2)
         ax.fill_between(dates, values, color=ACCENT_COLOR, alpha=0.12)
@@ -1209,6 +1666,108 @@ class ReportGenerator:
         fig.tight_layout()
         fig.savefig(path, bbox_inches="tight")
         plt.close(fig)
+
+    def _plot_bar_chart(self, path: Path, labels: list[str], values: list[float], title: str, horizontal: bool = False):
+        fig, ax = plt.subplots(figsize=(7.2, 3.8), dpi=150)
+        if horizontal:
+            ax.barh(labels, values)
+            ax.invert_yaxis()
+        else:
+            ax.bar(labels, values)
+        ax.set_title(title, fontsize=13, loc="left", pad=8)
+        ax.tick_params(axis="x", labelrotation=20, labelsize=9)
+        ax.tick_params(axis="y", labelsize=9)
+        fig.tight_layout()
+        fig.savefig(path, bbox_inches="tight")
+        plt.close(fig)
+
+    def _plot_dual_bar_chart(
+        self,
+        path: Path,
+        labels: list[str],
+        values_left: list[float],
+        values_right: list[float],
+        title: str,
+        left_label: str,
+        right_label: str,
+    ):
+        fig, axes = plt.subplots(1, 2, figsize=(9.2, 3.8), dpi=150)
+        axes[0].barh(labels, values_left)
+        axes[0].invert_yaxis()
+        axes[0].set_title(left_label, fontsize=12, loc="left")
+        axes[0].tick_params(axis="y", labelsize=8)
+        axes[0].tick_params(axis="x", labelsize=8)
+        axes[1].barh(labels, values_right)
+        axes[1].invert_yaxis()
+        axes[1].set_title(right_label, fontsize=12, loc="left")
+        axes[1].tick_params(axis="y", labelsize=8)
+        axes[1].tick_params(axis="x", labelsize=8)
+        fig.suptitle(title, fontsize=13)
+        fig.tight_layout()
+        fig.savefig(path, bbox_inches="tight")
+        plt.close(fig)
+
+    def _plot_heatmap(self, path: Path, matrix: list[list[float]], labels: list[str], title: str):
+        fig, ax = plt.subplots(figsize=(9, 3.8), dpi=150)
+        im = ax.imshow(matrix, aspect="auto")
+        ax.set_title(title, fontsize=13, loc="left", pad=8)
+        ax.set_yticks(range(len(labels)))
+        ax.set_yticklabels(labels, fontsize=9)
+        ax.set_xticks(range(0, 24, 3))
+        ax.set_xticklabels([str(h) for h in range(0, 24, 3)], fontsize=9)
+        fig.colorbar(im, ax=ax, fraction=0.02, pad=0.02)
+        fig.tight_layout()
+        fig.savefig(path, bbox_inches="tight")
+        plt.close(fig)
+
+    def generate_extra_charts(self, output_dir: Path, specs: dict) -> dict:
+        output_dir.mkdir(parents=True, exist_ok=True)
+        chart_paths: dict[str, str] = {}
+        for key, spec in specs.items():
+            if not spec.get("has_data"):
+                continue
+            filename = {
+                "week_scoreboard": "week_scoreboard.png",
+                "waste_keywords_top10": "waste_keywords_top10.png",
+                "waste_queries_top10": "waste_queries_top10.png",
+                "growth_keywords_cpa_top10": "growth_keywords_cpa_top10.png",
+                "growth_landing_cpa_top10": "growth_landing_cpa_top10.png",
+                "device_cpa_compare": "device_cpa_compare.png",
+                "countries_top10": "countries_top10.png",
+                "weekday_conversions": "weekday_conversions.png",
+                "hour_weekday_heatmap": "hour_weekday_heatmap.png",
+            }.get(key)
+            if not filename:
+                continue
+            path = output_dir / filename
+            if spec["type"] == "bar":
+                self._plot_bar_chart(path, spec["labels"], spec["values"], spec["title"], horizontal=False)
+            elif spec["type"] == "barh":
+                self._plot_bar_chart(path, spec["labels"], spec["values"], spec["title"], horizontal=True)
+            elif spec["type"] == "dual_bar":
+                self._plot_dual_bar_chart(
+                    path,
+                    spec["labels"],
+                    spec["values_left"],
+                    spec["values_right"],
+                    spec["title"],
+                    "전환",
+                    "전환당 비용",
+                )
+            elif spec["type"] == "device_compare":
+                self._plot_dual_bar_chart(
+                    path,
+                    spec["labels"],
+                    spec["values_left"],
+                    spec["values_right"],
+                    spec["title"],
+                    "전환",
+                    "전환당 비용",
+                )
+            elif spec["type"] == "heatmap":
+                self._plot_heatmap(path, spec["matrix"], spec["labels"], spec["title"])
+            chart_paths[key] = filename
+        return chart_paths
 
     def render_report(self, output_path: Path, context: dict):
         env = Environment(
@@ -1235,10 +1794,15 @@ def build_render_context(
     git_sha = os.getenv("GIT_SHA", "")[:7]
     charts = []
     for chart in report_data["charts"]:
+        if not chart.get("has_data"):
+            continue
         charts.append({
             "title": chart["title"],
             "path": f"{chart_prefix}{chart['filename']}",
         })
+    extra_charts = {
+        key: f"{chart_prefix}{filename}" for key, filename in report_data.get("extra_charts", {}).items()
+    }
     return {
         "report_title": REPORT_TITLE,
         "period_start": start_date,
@@ -1257,6 +1821,9 @@ def build_render_context(
         "wasted_summary": report_data["wasted_summary"],
         "conversion_definitions": report_data["conversion_definitions"],
         "exec_summary": report_data["exec_summary"],
+        "today_line": report_data["today_line"],
+        "action_cards": report_data["action_cards"],
+        "extra_charts": extra_charts,
         "build_metadata": {
             "env": build_env,
             "git_sha": git_sha,
@@ -1283,6 +1850,7 @@ def main():
 
     report_dir = Path(f"reports/{end_date}")
     generator.generate_charts(report_dir, report_data["charts"])
+    report_data["extra_charts"] = generator.generate_extra_charts(report_dir, report_data.get("extra_chart_specs", {}))
 
     report_context = build_render_context(
         report_data,

@@ -126,6 +126,11 @@
       color: var(--muted);
       margin-top: 4px;
     }
+    .kpi-delta {
+      font-size: 12px;
+      color: var(--muted);
+      margin-top: 4px;
+    }
     .divider {
       height: 1px;
       background: var(--line);
@@ -205,9 +210,36 @@
       left: 0;
       color: var(--accent);
     }
+    .action-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      gap: 14px;
+    }
+    .action-card {
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      padding: 16px;
+      background: #f9fafb;
+    }
+    .action-title {
+      font-weight: 700;
+      margin-bottom: 6px;
+    }
+    .action-desc {
+      font-size: 13px;
+      color: var(--muted);
+    }
     .geo-chart {
       width: 100%;
       height: 380px;
+    }
+    .chart-image {
+      width: 100%;
+      height: 260px;
+      object-fit: contain;
+      background: #fff;
+      border-radius: 10px;
+      border: 1px solid #eef2f7;
     }
     .empty-state {
       padding: 20px;
@@ -222,6 +254,18 @@
       gap: 8px;
       font-size: 13px;
       color: var(--muted);
+    }
+    details {
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      padding: 12px;
+      margin-top: 12px;
+      background: #fff;
+    }
+    summary {
+      font-weight: 600;
+      cursor: pointer;
+      margin-bottom: 10px;
     }
     .footer-space { margin-top: 40px; }
     @media (max-width: 720px) {
@@ -254,105 +298,139 @@
         <div class="build-meta">빌드: {{ build_metadata.env }} / {{ build_metadata.git_sha }} / {{ build_metadata.generated_at }}</div>
       </div>
     </header>
-
     <section class="section">
-      <div class="section-title">이번 주 결론</div>
-      <div class="ai-summary">기간: {{ exec_summary.range }}</div>
-      <ul class="ai-insights">
-        {% for line in exec_summary.lines %}
-        <li>{{ line }}</li>
-        {% endfor %}
-      </ul>
+      <div class="section-title">오늘 한 줄 결론</div>
+      <div class="ai-summary">{{ today_line }}</div>
     </section>
 
-    {% macro summary_block(title) %}
     <section class="section">
-      <div class="section-title">{{ title }}</div>
-      <div class="section-title">어제(확정) 핵심 지표 ({{ summary.yesterday_date }})</div>
-      <div class="summary-grid">
-        {% for card in summary.yesterday_cards %}
-        <div class="kpi-card">
-          <div class="kpi-label">{{ card.label }}</div>
-          <div class="kpi-value">{{ card.value }}{% if card.unit %}<span class="kpi-unit">{{ card.unit }}</span>{% endif %}</div>
-          {% if card.sub %}<div class="kpi-sub">{{ card.sub }}</div>{% endif %}
+      <div class="section-title">오늘 할 일 3개</div>
+      <div class="action-grid">
+        {% for card in action_cards %}
+        <div class="action-card">
+          <div class="action-title">{{ card.title }}</div>
+          <div class="action-desc">{{ card.desc }}</div>
         </div>
         {% endfor %}
       </div>
-      <div class="divider"></div>
-      <div class="section-title">오늘(부분집계)</div>
-      <div class="summary-grid compact">
-        {% for card in summary.today_cards %}
-        <div class="kpi-card small">
-          <div class="kpi-label">{{ card.label }}</div>
-          <div class="kpi-value">{{ card.value }}{% if card.unit %}<span class="kpi-unit">{{ card.unit }}</span>{% endif %}</div>
-          {% if card.sub %}<div class="kpi-sub">{{ card.sub }}</div>{% endif %}
-        </div>
-        {% endfor %}
-      </div>
-      <div class="divider"></div>
-      <div class="section-title">최근 30일 요약</div>
-      <div class="summary-grid">
-        {% for card in summary.last_30_cards %}
-        <div class="kpi-card">
-          <div class="kpi-label">{{ card.label }}</div>
-          <div class="kpi-value">{{ card.value }}{% if card.unit %}<span class="kpi-unit">{{ card.unit }}</span>{% endif %}</div>
-          {% if card.sub %}<div class="kpi-sub">{{ card.sub }}</div>{% endif %}
-        </div>
-        {% endfor %}
-      </div>
-      <div class="divider"></div>
-      <div class="section-title">전체기간 요약</div>
-      <div class="summary-grid">
-        {% for card in summary.all_time_cards %}
-        <div class="kpi-card">
-          <div class="kpi-label">{{ card.label }}</div>
-          <div class="kpi-value">{{ card.value }}{% if card.unit %}<span class="kpi-unit">{{ card.unit }}</span>{% endif %}</div>
-          {% if card.sub %}<div class="kpi-sub">{{ card.sub }}</div>{% endif %}
-        </div>
-        {% endfor %}
-      </div>
-      <div class="note">데이터 범위: {{ period_start }} ~ {{ period_end }} ({{ summary.total_days }}일)</div>
     </section>
-    {% endmacro %}
-
-    {{ summary_block("어제(확정) KPI") }}
 
     <section class="section">
-      <div class="section-title">낭비(전환 0) 요약 ({{ wasted_summary.start }} ~ {{ wasted_summary.end }})</div>
-      <div class="ai-summary">
-        전체 광고비 {{ wasted_summary.total_cost_display }} 중 낭비 비용 {{ wasted_summary.wasted_cost_display }} ({{ wasted_summary.wasted_share_display }})입니다.
-        <span class="note">전환 0 비용 TOP {{ wasted_summary.top_count }}개 합계 {{ wasted_summary.top_sum_display }}</span>
-      </div>
-      {% if wasted_summary.top_items %}
-      <div class="note">Top 3: {{ wasted_summary.top_items | join(", ") }}</div>
+      <div class="section-title">어디서 들어왔나</div>
+      {% if geo_map.has_data %}
+      <div id="geo-chart" class="geo-chart"></div>
+      {% if extra_charts.countries_top10 %}
+      <div class="chart-title">국가별 상위 10</div>
+      <img class="chart-image" src="{{ extra_charts.countries_top10 }}" alt="국가별 상위 10" onerror="this.style.display='none'">
       {% endif %}
-    </section>
-
-    <section class="section">
-      <div class="section-title">키워드 낭비 TOP</div>
-      <div class="chart-title">최근 7일 비용 상위 키워드 ({{ keyword_tables.last_7.start }} ~ {{ keyword_tables.last_7.end }})</div>
+      {% if geo_map.top10 %}
       <div class="table-wrap">
         <table>
           <thead>
             <tr>
-              {% for header in keyword_tables.last_7.top_cost.headers %}
-              <th>{{ header }}</th>
-              {% endfor %}
+              <th>국가</th>
+              <th>활성 사용자</th>
             </tr>
           </thead>
           <tbody>
-            {% for row in keyword_tables.last_7.top_cost.rows %}
+            {% for row in geo_map.top10 %}
             <tr>
-              {% for cell in row %}
-              <td>{{ cell }}</td>
-              {% endfor %}
+              <td>{{ row.country }}</td>
+              <td>{{ row.active_display }}</td>
             </tr>
             {% endfor %}
           </tbody>
         </table>
       </div>
+      {% endif %}
+      <div class="note">총 활성 사용자: {{ geo_map.total_active_display }}명</div>
+      {% else %}
+      <div class="empty-state">국가별 데이터가 없습니다.</div>
+      {% endif %}
+    </section>
+
+    <section class="section">
+      <div class="section-title">핵심 지표</div>
+      <div class="chart-title">어제(확정) {{ summary.yesterday_date }}</div>
+      <div class="summary-grid">
+        {% for card in summary.yesterday_cards %}
+        <div class="kpi-card">
+          <div class="kpi-label">{{ card.label }}</div>
+          <div class="kpi-value">{{ card.value }}{% if card.unit %}<span class="kpi-unit">{{ card.unit }}</span>{% endif %}</div>
+          {% if card.delta %}<div class="kpi-delta">{{ card.delta }}</div>{% endif %}
+        </div>
+        {% endfor %}
+      </div>
       <div class="divider"></div>
-      <div class="chart-title">최근 7일 낭비 키워드 (전환 0, 비용 상위)</div>
+      <div class="chart-title">오늘(부분집계)</div>
+      <div class="summary-grid compact">
+        {% for card in summary.today_cards %}
+        <div class="kpi-card small">
+          <div class="kpi-label">{{ card.label }}</div>
+          <div class="kpi-value">{{ card.value }}{% if card.unit %}<span class="kpi-unit">{{ card.unit }}</span>{% endif %}</div>
+          {% if card.delta %}<div class="kpi-delta">{{ card.delta }}</div>{% endif %}
+        </div>
+        {% endfor %}
+      </div>
+      <div class="divider"></div>
+      <div class="chart-title">지난 7일 {{ summary.last_7_range }}</div>
+      <div class="summary-grid">
+        {% for card in summary.last_7_cards %}
+        <div class="kpi-card">
+          <div class="kpi-label">{{ card.label }}</div>
+          <div class="kpi-value">{{ card.value }}{% if card.unit %}<span class="kpi-unit">{{ card.unit }}</span>{% endif %}</div>
+          {% if card.delta %}<div class="kpi-delta">{{ card.delta }}</div>{% endif %}
+        </div>
+        {% endfor %}
+      </div>
+      <div class="divider"></div>
+      <div class="chart-title">지난 30일 {{ summary.last_30_range }}</div>
+      <div class="summary-grid">
+        {% for card in summary.last_30_cards %}
+        <div class="kpi-card">
+          <div class="kpi-label">{{ card.label }}</div>
+          <div class="kpi-value">{{ card.value }}{% if card.unit %}<span class="kpi-unit">{{ card.unit }}</span>{% endif %}</div>
+          {% if card.delta %}<div class="kpi-delta">{{ card.delta }}</div>{% endif %}
+        </div>
+        {% endfor %}
+      </div>
+    </section>
+
+    <section class="section">
+      <div class="section-title">이번 주 한 장 요약</div>
+      {% if extra_charts.week_scoreboard %}
+      <img class="chart-image" src="{{ extra_charts.week_scoreboard }}" alt="이번 주 한 장 요약" onerror="this.style.display='none'">
+      {% else %}
+      <div class="empty-state">이번 주 비교 데이터가 없습니다.</div>
+      {% endif %}
+    </section>
+
+    <section class="section">
+      <div class="section-title">돈 샌 곳(전환 0)</div>
+      <div class="ai-summary">
+        전환 0 비용 합계 {{ wasted_summary.wasted_cost_display }} / 전체 {{ wasted_summary.total_cost_display }}
+        <span class="note">Top 3 합계 {{ wasted_summary.top_sum_display }}</span>
+      </div>
+      {% if extra_charts.waste_keywords_top10 or extra_charts.waste_queries_top10 %}
+      <div class="chart-grid">
+        {% if extra_charts.waste_keywords_top10 %}
+        <div class="chart-card">
+          <div class="chart-title">전환 0 키워드 TOP 10</div>
+          <img src="{{ extra_charts.waste_keywords_top10 }}" alt="전환 0 키워드 TOP 10" onerror="this.style.display='none'">
+        </div>
+        {% endif %}
+        {% if extra_charts.waste_queries_top10 %}
+        <div class="chart-card">
+          <div class="chart-title">전환 0 검색어 TOP 10</div>
+          <img src="{{ extra_charts.waste_queries_top10 }}" alt="전환 0 검색어 TOP 10" onerror="this.style.display='none'">
+        </div>
+        {% endif %}
+      </div>
+      {% else %}
+      <div class="empty-state">낭비 차트 데이터가 없습니다.</div>
+      {% endif %}
+      <div class="divider"></div>
+      <div class="chart-title">광고비만 나간 키워드 TOP</div>
       {% if keyword_tables.last_7.wasted.rows %}
       <div class="table-wrap">
         <table>
@@ -378,31 +456,7 @@
       <div class="empty-state">낭비 키워드 데이터가 없습니다.</div>
       {% endif %}
       <div class="divider"></div>
-      <div class="chart-title">최근 30일 비용 상위 키워드 ({{ keyword_tables.last_30.start }} ~ {{ keyword_tables.last_30.end }})</div>
-      <div class="table-wrap">
-        <table>
-          <thead>
-            <tr>
-              {% for header in keyword_tables.last_30.top_cost.headers %}
-              <th>{{ header }}</th>
-              {% endfor %}
-            </tr>
-          </thead>
-          <tbody>
-            {% for row in keyword_tables.last_30.top_cost.rows %}
-            <tr>
-              {% for cell in row %}
-              <td>{{ cell }}</td>
-              {% endfor %}
-            </tr>
-            {% endfor %}
-          </tbody>
-        </table>
-      </div>
-    </section>
-
-    <section class="section">
-      <div class="section-title">검색어(유입 쿼리) 낭비 TOP ({{ search_terms.start }} ~ {{ search_terms.end }})</div>
+      <div class="chart-title">사람들이 실제로 검색한 말 중 손해 TOP</div>
       {% if search_terms.table.rows %}
       <div class="table-wrap">
         <table>
@@ -430,128 +484,115 @@
     </section>
 
     <section class="section">
-      <div class="section-title">일별 추이 그래프 (오늘 포함)</div>
+      <div class="section-title">돈 더 써도 되는 곳</div>
       <div class="chart-grid">
-        {% for chart in charts %}
+        {% if extra_charts.growth_keywords_cpa_top10 %}
         <div class="chart-card">
-          <div class="chart-title">{{ chart.title }}</div>
-          <img src="{{ chart.path }}" alt="{{ chart.title }} 그래프">
+          <div class="chart-title">전환당 비용 낮은 키워드 TOP 10</div>
+          <img src="{{ extra_charts.growth_keywords_cpa_top10 }}" alt="전환당 비용 낮은 키워드 TOP 10" onerror="this.style.display='none'">
         </div>
-        {% endfor %}
+        {% endif %}
+        {% if extra_charts.growth_landing_cpa_top10 %}
+        <div class="chart-card">
+          <div class="chart-title">랜딩페이지 전환/전환당 비용 TOP 10</div>
+          <img src="{{ extra_charts.growth_landing_cpa_top10 }}" alt="랜딩페이지 전환/전환당 비용 TOP 10" onerror="this.style.display='none'">
+        </div>
+        {% endif %}
+        {% if extra_charts.device_cpa_compare %}
+        <div class="chart-card">
+          <div class="chart-title">기기별 전환/전환당 비용</div>
+          <img src="{{ extra_charts.device_cpa_compare }}" alt="기기별 전환/전환당 비용" onerror="this.style.display='none'">
+        </div>
+        {% endif %}
       </div>
-      <div class="note">기본 그래프는 최근 30일 기준이며, 전체기간 누적/평균 수치는 요약 섹션에 반영했습니다.</div>
-    </section>
-
-    <section class="section">
-      <div class="section-title">최근 7일 국가별 활성 사용자 지도 ({{ geo_map.start }} ~ {{ geo_map.end }})</div>
-      {% if geo_map.has_data %}
-      <div id="geo-chart" class="geo-chart"></div>
-      <div class="note">총 활성 사용자: {{ geo_map.total_active_display }}명</div>
-      {% else %}
-      <div class="empty-state">최근 7일 국가별 활성 사용자 데이터가 없습니다.</div>
+      {% if not extra_charts.growth_keywords_cpa_top10 and not extra_charts.growth_landing_cpa_top10 and not extra_charts.device_cpa_compare %}
+      <div class="empty-state">성장 후보 데이터가 없습니다.</div>
       {% endif %}
     </section>
 
     <section class="section">
-      <div class="section-title">전환 정의(전환 액션 목록)</div>
-      <div class="chart-title">현재 활성 전환 액션</div>
-      <div class="table-wrap">
-        <table>
-          <thead>
-            <tr>
-              {% for header in conversion_definitions.actions.headers %}
-              <th>{{ header }}</th>
-              {% endfor %}
-            </tr>
-          </thead>
-          <tbody>
-            {% for row in conversion_definitions.actions.rows %}
-            <tr>
-              {% for cell in row %}
-              <td>{{ cell }}</td>
-              {% endfor %}
-            </tr>
-            {% endfor %}
-          </tbody>
-        </table>
-      </div>
+      <div class="section-title">왜 이런지 빠르게 보기</div>
+      {% if extra_charts.weekday_conversions %}
+      <img class="chart-image" src="{{ extra_charts.weekday_conversions }}" alt="요일별 전환" onerror="this.style.display='none'">
+      {% else %}
+      <div class="empty-state">요일별 전환 데이터가 없습니다.</div>
+      {% endif %}
+      {% if extra_charts.hour_weekday_heatmap %}
       <div class="divider"></div>
-      <div class="chart-title">최근 30일 전환 액션별 성과</div>
-      <div class="table-wrap">
-        <table>
-          <thead>
-            <tr>
-              {% for header in conversion_definitions.performance.headers %}
-              <th>{{ header }}</th>
-              {% endfor %}
-            </tr>
-          </thead>
-          <tbody>
-            {% for row in conversion_definitions.performance.rows %}
-            <tr>
-              {% for cell in row %}
-              <td>{{ cell }}</td>
-              {% endfor %}
-            </tr>
-            {% endfor %}
-          </tbody>
-        </table>
-      </div>
+      <img class="chart-image" src="{{ extra_charts.hour_weekday_heatmap }}" alt="시간대별 전환" onerror="this.style.display='none'">
+      {% endif %}
     </section>
 
     <section class="section">
-      <div class="section-title">상위 테이블</div>
-      <div class="chart-grid">
-        <div>
-          <div class="chart-title">GA4 상위 랜딩페이지 (최근 30일)</div>
-          <div class="table-wrap">
-            <table>
-              <thead>
-                <tr>
-                  {% for header in tables.landing_pages.headers %}
-                  <th>{{ header }}</th>
+      <div class="section-title">상세 데이터</div>
+      <details>
+        <summary>일별 추이(최근 30일)</summary>
+        {% if charts %}
+        <div class="chart-grid">
+          {% for chart in charts %}
+          <div class="chart-card">
+            <div class="chart-title">{{ chart.title }}</div>
+            <img src="{{ chart.path }}" alt="{{ chart.title }}" onerror="this.style.display='none'">
+          </div>
+          {% endfor %}
+        </div>
+        {% else %}
+        <div class="empty-state">추이 그래프 데이터가 없습니다.</div>
+        {% endif %}
+      </details>
+      <details open>
+        <summary>어디로 들어왔나(랜딩/유입경로)</summary>
+        <div class="chart-grid">
+          <div>
+            <div class="chart-title">GA4 상위 랜딩페이지 (최근 30일)</div>
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    {% for header in tables.landing_pages.headers %}
+                    <th>{{ header }}</th>
+                    {% endfor %}
+                  </tr>
+                </thead>
+                <tbody>
+                  {% for row in tables.landing_pages.rows %}
+                  <tr>
+                    {% for cell in row %}
+                    <td>{{ cell }}</td>
+                    {% endfor %}
+                  </tr>
                   {% endfor %}
-                </tr>
-              </thead>
-              <tbody>
-                {% for row in tables.landing_pages.rows %}
-                <tr>
-                  {% for cell in row %}
-                  <td>{{ cell }}</td>
+                </tbody>
+              </table>
+            </div>
+          </div>
+          <div>
+            <div class="chart-title">GA4 상위 소스/미디엄 (최근 30일)</div>
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    {% for header in tables.source_medium.headers %}
+                    <th>{{ header }}</th>
+                    {% endfor %}
+                  </tr>
+                </thead>
+                <tbody>
+                  {% for row in tables.source_medium.rows %}
+                  <tr>
+                    {% for cell in row %}
+                    <td>{{ cell }}</td>
+                    {% endfor %}
+                  </tr>
                   {% endfor %}
-                </tr>
-                {% endfor %}
-              </tbody>
-            </table>
+                </tbody>
+              </table>
+            </div>
           </div>
         </div>
-        <div>
-          <div class="chart-title">GA4 상위 소스/미디엄 (최근 30일)</div>
-          <div class="table-wrap">
-            <table>
-              <thead>
-                <tr>
-                  {% for header in tables.source_medium.headers %}
-                  <th>{{ header }}</th>
-                  {% endfor %}
-                </tr>
-              </thead>
-              <tbody>
-                {% for row in tables.source_medium.rows %}
-                <tr>
-                  {% for cell in row %}
-                  <td>{{ cell }}</td>
-                  {% endfor %}
-                </tr>
-                {% endfor %}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      </div>
-      <div class="divider"></div>
-      <div>
-        <div class="chart-title">광고 상위 캠페인 (최근 30일)</div>
+      </details>
+      <details>
+        <summary>광고 캠페인 상세</summary>
         <div class="table-wrap">
           <table>
             <thead>
@@ -572,7 +613,53 @@
             </tbody>
           </table>
         </div>
-      </div>
+      </details>
+      <details>
+        <summary>전환이 뭔지(기준)</summary>
+        <div class="chart-title">현재 활성 전환 액션</div>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                {% for header in conversion_definitions.actions.headers %}
+                <th>{{ header }}</th>
+                {% endfor %}
+              </tr>
+            </thead>
+            <tbody>
+              {% for row in conversion_definitions.actions.rows %}
+              <tr>
+                {% for cell in row %}
+                <td>{{ cell }}</td>
+                {% endfor %}
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+        <div class="divider"></div>
+        <div class="chart-title">최근 30일 전환 액션별 성과</div>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                {% for header in conversion_definitions.performance.headers %}
+                <th>{{ header }}</th>
+                {% endfor %}
+              </tr>
+            </thead>
+            <tbody>
+              {% for row in conversion_definitions.performance.rows %}
+              <tr>
+                {% for cell in row %}
+                <td>{{ cell }}</td>
+                {% endfor %}
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </details>
     </section>
 
     <div class="footer-space"></div>
@@ -589,8 +676,6 @@
         <div>광고 수익률: 전환 가치 ÷ 광고비입니다.</div>
       </div>
     </section>
-
-    {{ summary_block("하단 요약") }}
   </div>
 
   {% if geo_map.has_data %}
@@ -600,7 +685,6 @@
     function drawGeoChart() {
       var data = google.visualization.arrayToDataTable({{ geo_map.chart_json | safe }});
       var options = {
-        colorAxis: {colors: ["#e7efff", "#2563eb"]},
         backgroundColor: "transparent",
         legend: "none"
       };
