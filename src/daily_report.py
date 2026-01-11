@@ -1209,7 +1209,14 @@ class ReportGenerator:
         total_conversions = None
         organic_conversions = None
         ga4_today_has_data = False
+        ga4_today_sessions = None
+        ga4_today_active = None
         try:
+            totals = self.ga4.run_report([], ["sessions", "activeUsers"], today, today)
+            if totals:
+                ga4_today_has_data = True
+                ga4_today_sessions = float(totals[0].get("sessions", 0))
+                ga4_today_active = float(totals[0].get("activeUsers", 0))
             rows = self.ga4.run_report(
                 ["eventName", "sessionMedium"],
                 ["eventCount"],
@@ -1217,7 +1224,8 @@ class ReportGenerator:
                 today,
                 limit=10000,
             )
-            ga4_today_has_data = bool(rows)
+            if rows:
+                ga4_today_has_data = True
             total_conversions = 0.0
             organic_conversions = 0.0
             for row in rows:
@@ -1231,14 +1239,7 @@ class ReportGenerator:
             total_conversions = None
             organic_conversions = None
 
-        visitors = None
-        try:
-            rows = self.ga4.run_report([], ["activeUsers"], today, today)
-            if rows:
-                ga4_today_has_data = True
-                visitors = float(rows[0].get("activeUsers", 0))
-        except Exception:
-            visitors = None
+        visitors = ga4_today_active
 
         organic_sessions = None
         try:
@@ -1253,6 +1254,7 @@ class ReportGenerator:
             organic_sessions = None
 
         top_landing = None
+        top_landing_label = "오늘 가장 많이 본 페이지"
         try:
             rows = self.ga4.run_report(["landingPagePlusQueryString"], ["sessions"], today, today, limit=1000)
             if rows:
@@ -1261,11 +1263,32 @@ class ReportGenerator:
                 top_landing = rows[0].get("landingPagePlusQueryString")
         except Exception:
             top_landing = None
+        if top_landing is None:
+            last_7_start = end - timedelta(days=6)
+            try:
+                rows = self.ga4.run_report(
+                    ["landingPagePlusQueryString"],
+                    ["sessions"],
+                    last_7_start.isoformat(),
+                    today,
+                    limit=1000,
+                )
+                if rows:
+                    rows.sort(key=lambda r: float(r.get("sessions", 0)), reverse=True)
+                    top_landing = rows[0].get("landingPagePlusQueryString")
+                    top_landing_label = "최근 7일 최다 페이지"
+            except Exception:
+                top_landing = None
 
         ads_today = ads_daily.get(today, {"cost": 0.0, "impressions": 0, "clicks": 0, "conversions": 0.0})
         ads_ctr = safe_div(ads_today["clicks"], ads_today["impressions"]) * 100 if ads_today["impressions"] else None
 
         ads_inquiry = self._get_ads_inquiry_conversions(end, end)
+
+        def format_count(value: float | str | None) -> str:
+            if value is None:
+                return "데이터 없음"
+            return str(int(round(float(value))))
 
         def display(value: float | str | None, formatter=None) -> tuple[str, str | None]:
             if value is None:
@@ -1279,15 +1302,20 @@ class ReportGenerator:
                 return "데이터 없음", "GA4 오늘 데이터가 없습니다."
             return display(value, formatter)
 
+        visitor_label = "오늘 방문자 수(활성 사용자)"
+        if ga4_today_has_data and (visitors is None or (visitors == 0 and ga4_today_sessions and ga4_today_sessions > 0)):
+            visitors = ga4_today_sessions
+            visitor_label = "오늘 방문자 수(세션)"
+
         cards = []
         for label, value, formatter in [
-            ("오늘 총 문의 수", total_conversions, lambda v: format_int(v)),
-            ("오늘 방문자 수(활성 사용자)", visitors, lambda v: format_int(v)),
+            ("오늘 총 문의 수", total_conversions, format_count),
+            (visitor_label, visitors, lambda v: format_int(v)),
             ("오늘 쓴 돈(광고비)", ads_today["cost"], format_currency),
             ("오늘 SEO 방문자 수(세션)", organic_sessions, lambda v: format_int(v)),
-            ("오늘 SEO 문의 수", organic_conversions, lambda v: format_int(v)),
-            ("오늘 Google Ads 문의 수", ads_inquiry, lambda v: format_int(v)),
-            ("오늘 가장 많이 본 페이지", top_landing, None),
+            ("오늘 SEO 문의 수", organic_conversions, format_count),
+            ("오늘 Google Ads 문의 수", ads_inquiry, format_count),
+            (top_landing_label, top_landing, None),
             ("오늘 광고 클릭률(CTR)", ads_ctr, lambda v: format_percent(v, 1)),
             ("오늘 광고 노출 수", float(ads_today["impressions"]), lambda v: format_int(v)),
         ]:
@@ -1319,12 +1347,17 @@ class ReportGenerator:
             return None
         total = 0.0
         matched = False
+        has_rows = bool(rows)
         for row in rows:
             name = (row.segments.conversion_action_name or "").lower()
             if any(key in name for key in inquiry_keywords):
                 matched = True
                 total += row.metrics.conversions
-        return total if matched else None
+        if matched:
+            return total
+        if has_rows:
+            return 0.0
+        return None
 
     def _build_kpi_summary_by_range(
         self,
