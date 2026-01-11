@@ -67,13 +67,11 @@ CHART_TITLE_SIZE = 20
 CHART_LABEL_SIZE = 15
 CHART_TICK_SIZE = 13
 CHART_ANNOT_SIZE = 13
-INQUIRY_EVENTS = [
-    "inquiry_complete",
-    "contact_form_submit",
+INQUIRY_EVENT_NAMES = [
     "form_submit",
-    "lead",
-    "contact",
-    "inquiry",
+    "contact_form_submit",
+    "inquiry_form_submit",
+    "lead_form_submit",
 ]
 
 
@@ -1215,8 +1213,12 @@ class ReportGenerator:
 
     def _build_top_strip_today(self, end: date, ads_daily: dict) -> dict:
         today = end.isoformat()
-        total_conversions = None
-        organic_conversions = None
+        print(f"[INFO] 문의 이벤트 사용: {', '.join(INQUIRY_EVENT_NAMES)}")
+        total_inquiries = None
+        seo_inquiries = None
+        ads_inquiries = None
+        direct_inquiries = None
+        other_inquiries = None
         ga4_today_has_data = False
         ga4_today_sessions = None
         ga4_today_active = None
@@ -1227,7 +1229,7 @@ class ReportGenerator:
                 ga4_today_sessions = float(totals[0].get("sessions", 0))
                 ga4_today_active = float(totals[0].get("activeUsers", 0))
             rows = self.ga4.run_report(
-                ["eventName", "sessionMedium"],
+                ["eventName", "sessionSource", "sessionMedium"],
                 ["eventCount"],
                 today,
                 today,
@@ -1235,18 +1237,45 @@ class ReportGenerator:
             )
             if rows:
                 ga4_today_has_data = True
-            total_conversions = 0.0
-            organic_conversions = 0.0
+            total_inquiries = 0.0
+            seo_inquiries = 0.0
+            ads_inquiries = 0.0
+            direct_inquiries = 0.0
+            other_inquiries = 0.0
+            inquiry_found = False
+            matched_events = set()
             for row in rows:
                 event_name = (row.get("eventName") or "").lower()
-                if event_name in INQUIRY_EVENTS:
-                    count = float(row.get("eventCount", 0))
-                    total_conversions += count
-                    if row.get("sessionMedium") == "organic":
-                        organic_conversions += count
+                if event_name not in INQUIRY_EVENT_NAMES:
+                    continue
+                inquiry_found = True
+                matched_events.add(event_name)
+                count = float(row.get("eventCount", 0))
+                total_inquiries += count
+                source = (row.get("sessionSource") or "").lower()
+                medium = (row.get("sessionMedium") or "").lower()
+                if medium == "organic":
+                    seo_inquiries += count
+                elif medium in ("cpc", "ppc", "paidsearch") or (source == "google" and medium == "cpc"):
+                    ads_inquiries += count
+                elif source == "(direct)" and medium == "(none)":
+                    direct_inquiries += count
+                else:
+                    other_inquiries += count
+            if inquiry_found:
+                print(f"[INFO] 문의 이벤트 집계됨: {', '.join(sorted(matched_events))}")
+            else:
+                total_inquiries = None
+                seo_inquiries = None
+                ads_inquiries = None
+                direct_inquiries = None
+                other_inquiries = None
         except Exception:
-            total_conversions = None
-            organic_conversions = None
+            total_inquiries = None
+            seo_inquiries = None
+            ads_inquiries = None
+            direct_inquiries = None
+            other_inquiries = None
 
         visitors = ga4_today_active
 
@@ -1292,8 +1321,6 @@ class ReportGenerator:
         ads_today = ads_daily.get(today, {"cost": 0.0, "impressions": 0, "clicks": 0, "conversions": 0.0})
         ads_ctr = safe_div(ads_today["clicks"], ads_today["impressions"]) * 100 if ads_today["impressions"] else None
 
-        ads_inquiry = self._get_ads_inquiry_conversions(end, end)
-
         def format_count(value: float | str | None) -> str:
             if value is None:
                 return "데이터 없음"
@@ -1318,21 +1345,26 @@ class ReportGenerator:
 
         cards = []
         for label, value, formatter in [
-            ("오늘 총 문의 수", total_conversions, format_count),
+            ("오늘 총 문의 수(폼 제출)", total_inquiries, format_count),
             (visitor_label, visitors, lambda v: format_int(v)),
             ("오늘 쓴 돈(광고비)", ads_today["cost"], format_currency),
             ("오늘 SEO 방문자 수(세션)", organic_sessions, lambda v: format_int(v)),
-            ("오늘 SEO 문의 수", organic_conversions, format_count),
-            ("오늘 Google Ads 문의 수", ads_inquiry, format_count),
+            ("오늘 SEO 문의 수(폼 제출)", seo_inquiries, format_count),
+            ("오늘 Google Ads 문의 수(폼 제출)", ads_inquiries, format_count),
+            ("오늘 Direct 문의 수(폼 제출)", direct_inquiries, format_count),
+            ("오늘 기타 문의 수(폼 제출)", other_inquiries, format_count),
             (top_landing_label, top_landing, None),
             ("오늘 광고 클릭률(CTR)", ads_ctr, lambda v: format_percent(v, 1)),
             ("오늘 광고 노출 수", float(ads_today["impressions"]), lambda v: format_int(v)),
         ]:
             if label in (
-                "오늘 총 문의 수",
+                "오늘 총 문의 수(폼 제출)",
                 "오늘 방문자 수(활성 사용자)",
                 "오늘 SEO 방문자 수(세션)",
-                "오늘 SEO 문의 수",
+                "오늘 SEO 문의 수(폼 제출)",
+                "오늘 Google Ads 문의 수(폼 제출)",
+                "오늘 Direct 문의 수(폼 제출)",
+                "오늘 기타 문의 수(폼 제출)",
                 "오늘 가장 많이 본 페이지",
             ):
                 value_text, tooltip = display_ga4(value, formatter)
