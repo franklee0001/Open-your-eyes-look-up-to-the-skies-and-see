@@ -2477,6 +2477,7 @@ def build_render_context(
     logo_png_path: str,
     logo_svg_path: str,
     logo_url: str | None,
+    custom_domain: str | None,
     start_date: str,
     end_date: str,
 ) -> dict:
@@ -2508,6 +2509,7 @@ def build_render_context(
         "logo_png_path": logo_png_path,
         "logo_svg_path": logo_svg_path,
         "logo_url": logo_url,
+        "custom_domain": custom_domain,
         "ai_summary": report_data["ai_summary"],
         "geo_maps": report_data["geo_maps"],
         "keyword_tables": report_data["keyword_tables"],
@@ -2545,6 +2547,7 @@ def main():
     property_id = os.getenv("PROPERTY_ID")
     customer_id = os.getenv("CUSTOMER_ID")
     logo_url = os.getenv("LOGO_URL", "").strip() or None
+    custom_domain = os.getenv("CUSTOM_DOMAIN", "").strip() or None
     if not property_id or not customer_id:
         print("오류: PROPERTY_ID와 CUSTOMER_ID가 필요합니다.")
         return
@@ -2570,6 +2573,7 @@ def main():
         logo_png_path="../../assets/huelight-logo.png",
         logo_svg_path="../../assets/huelight-logo.svg",
         logo_url=logo_url,
+        custom_domain=custom_domain,
         start_date=start_date,
         end_date=end_date,
     )

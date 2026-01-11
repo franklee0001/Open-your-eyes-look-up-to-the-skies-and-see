@@ -4,6 +4,29 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>{{ report_title }}</title>
+  {% if custom_domain %}
+  <meta name="robots" content="noindex,nofollow">
+  <meta name="googlebot" content="noindex,nofollow">
+  <link rel="canonical" href="https://{{ custom_domain }}/">
+  <script>
+    (function() {
+      var customDomain = "{{ custom_domain }}";
+      if (!customDomain) {
+        return;
+      }
+      var host = window.location.hostname || "";
+      if (host.endsWith(".github.io")) {
+        var target = "https://" + customDomain + window.location.pathname + window.location.search + window.location.hash;
+        window.location.replace(target);
+        return;
+      }
+      var canonical = document.querySelector('link[rel="canonical"]');
+      if (canonical) {
+        canonical.href = "https://" + customDomain + window.location.pathname;
+      }
+    })();
+  </script>
+  {% endif %}
   <style>
     :root {
       --accent: #2563eb;
