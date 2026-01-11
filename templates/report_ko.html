@@ -442,6 +442,24 @@
       </div>
     </section>
     <section class="section">
+      <div class="section-title">월간 요약 (최근 12개월)</div>
+      <div class="note">월 단위로 전환과 방문자 흐름을 빠르게 확인합니다.</div>
+      <div class="chart-grid">
+        {% for card in monthly_summary.cards %}
+        <div class="chart-card">
+          <div class="chart-title">{{ card.label }}</div>
+          {% set chart_path = extra_charts.get(card.key) %}
+          {% if chart_path and card.has_data %}
+          <img src="{{ chart_path }}" alt="{{ card.label }}" onerror="this.style.display='none'">
+          {% else %}
+          <div class="empty-state">데이터 없음</div>
+          {% endif %}
+          <div class="note">{{ card.note }}</div>
+        </div>
+        {% endfor %}
+      </div>
+    </section>
+    <section class="section">
       <div class="section-title">오늘 한 줄 결론</div>
       <div class="ai-summary">{{ today_line }}</div>
     </section>
