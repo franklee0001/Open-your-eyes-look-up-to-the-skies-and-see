@@ -2799,6 +2799,16 @@ def build_render_context(
 ) -> dict:
     build_env = os.getenv("BUILD_ENV", "local")
     git_sha = os.getenv("GIT_SHA", "")[:7]
+    gh_sha = os.getenv("GITHUB_SHA", "")
+    gh_run_id = os.getenv("GITHUB_RUN_ID", "")
+    gh_server_url = os.getenv("GITHUB_SERVER_URL", "")
+    gh_repo = os.getenv("GITHUB_REPOSITORY", "")
+    gh_workflow = os.getenv("GITHUB_WORKFLOW", "")
+    gh_ref_name = os.getenv("GITHUB_REF_NAME", "")
+    build_sha_short = (gh_sha or os.getenv("GIT_SHA", ""))[:7]
+    build_run_url = ""
+    if gh_server_url and gh_repo and gh_run_id:
+        build_run_url = f"{gh_server_url}/{gh_repo}/actions/runs/{gh_run_id}"
     charts = []
     for chart in report_data["charts"]:
         if not chart.get("has_data"):
@@ -2856,6 +2866,15 @@ def build_render_context(
         "build_metadata": {
             "env": build_env,
             "git_sha": git_sha,
+            "generated_at": datetime.now(ZoneInfo(TIMEZONE)).strftime("%Y-%m-%d %H:%M"),
+        },
+        "build_info": {
+            "source": "github-actions" if gh_sha else build_env,
+            "sha_short": build_sha_short or git_sha,
+            "run_url": build_run_url,
+            "run_id": gh_run_id,
+            "workflow": gh_workflow,
+            "ref_name": gh_ref_name,
             "generated_at": datetime.now(ZoneInfo(TIMEZONE)).strftime("%Y-%m-%d %H:%M"),
         },
     }

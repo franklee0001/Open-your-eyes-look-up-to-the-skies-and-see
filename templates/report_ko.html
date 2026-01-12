@@ -417,6 +417,12 @@
         <div>
           <div class="title">{{ report_title }}</div>
           <div class="subtitle">기간: {{ period_start }} ~ {{ period_end }}</div>
+          <div class="build-meta">
+            Build: {{ build_info.source }} / {{ build_info.sha_short }} / {{ build_info.generated_at }}
+            {% if build_info.run_url %}
+            · <a href="{{ build_info.run_url }}" target="_blank" rel="noopener">이 빌드의 Actions run 열기</a>
+            {% endif %}
+          </div>
         </div>
       </div>
       <div class="meta">
@@ -450,7 +456,7 @@
       <div class="note">방문자 흐름 변화는 문의/전환의 선행 신호입니다.</div>
       <div class="chart-card">
         {% if extra_charts.weekly_active_users and weekly_active_users.has_data %}
-        <img src="{{ extra_charts.weekly_active_users }}" alt="최근 7일 방문자(활성 사용자)" onerror="this.style.display='none'">
+        <img src="{{ extra_charts.weekly_active_users }}?v={{ build_info.sha_short }}" alt="최근 7일 방문자(활성 사용자)" onerror="this.style.display='none'">
         {% else %}
         <div class="empty-state">해당 기간에 방문자 데이터가 없습니다.</div>
         {% endif %}
@@ -465,7 +471,7 @@
           <div class="chart-title">{{ card.label }}</div>
           {% set chart_path = extra_charts.get(card.key) %}
           {% if chart_path and card.has_data %}
-          <img src="{{ chart_path }}" alt="{{ card.label }}" onerror="this.style.display='none'">
+          <img src="{{ chart_path }}?v={{ build_info.sha_short }}" alt="{{ card.label }}" onerror="this.style.display='none'">
           {% else %}
           <div class="empty-state">데이터 없음</div>
           {% endif %}
@@ -514,7 +520,7 @@
       </div>
       {% for key in ["7d", "1d", "30d", "all"] %}
       {% if geo_map_images[key] %}
-      <img class="chart-image toggle-panel {% if key != '7d' %}hidden{% endif %}" data-toggle-panel="geo" data-range="{{ key }}" src="{{ geo_map_images[key] }}" alt="국가별 지도" onerror="this.style.display='none'">
+      <img class="chart-image toggle-panel {% if key != '7d' %}hidden{% endif %}" data-toggle-panel="geo" data-range="{{ key }}" src="{{ geo_map_images[key] }}?v={{ build_info.sha_short }}" alt="국가별 지도" onerror="this.style.display='none'">
       {% else %}
       <div class="empty-state toggle-panel {% if key != '7d' %}hidden{% endif %}" data-toggle-panel="geo" data-range="{{ key }}">국가별 데이터가 없습니다.</div>
       {% endif %}
@@ -583,7 +589,7 @@
     <section class="section">
       <div class="section-title">이번 주 한 장 요약</div>
       {% if extra_charts.week_scoreboard %}
-      <img class="chart-image" src="{{ extra_charts.week_scoreboard }}" alt="이번 주 한 장 요약" onerror="this.style.display='none'">
+      <img class="chart-image" src="{{ extra_charts.week_scoreboard }}?v={{ build_info.sha_short }}" alt="이번 주 한 장 요약" onerror="this.style.display='none'">
       <div class="chart-note">
         <strong>의미:</strong> 지난 7일이 전주 대비 얼마나 좋아졌는지 한 장으로 보여줍니다.<br>
         <strong>해석:</strong>
@@ -618,13 +624,13 @@
         {% if extra_charts.waste_keywords_top10 %}
         <div class="chart-card">
           <div class="chart-title">전환 0 키워드 TOP 10</div>
-          <img src="{{ extra_charts.waste_keywords_top10 }}" alt="전환 0 키워드 TOP 10" onerror="this.style.display='none'">
+          <img src="{{ extra_charts.waste_keywords_top10 }}?v={{ build_info.sha_short }}" alt="전환 0 키워드 TOP 10" onerror="this.style.display='none'">
         </div>
         {% endif %}
         {% if extra_charts.waste_queries_top10 %}
         <div class="chart-card">
           <div class="chart-title">전환 0 검색어 TOP 10</div>
-          <img src="{{ extra_charts.waste_queries_top10 }}" alt="전환 0 검색어 TOP 10" onerror="this.style.display='none'">
+          <img src="{{ extra_charts.waste_queries_top10 }}?v={{ build_info.sha_short }}" alt="전환 0 검색어 TOP 10" onerror="this.style.display='none'">
         </div>
         {% endif %}
       </div>
@@ -713,19 +719,19 @@
         {% if extra_charts.growth_keywords_cpa_top10 %}
         <div class="chart-card">
           <div class="chart-title">전환당 비용 낮은 키워드 TOP 10</div>
-          <img src="{{ extra_charts.growth_keywords_cpa_top10 }}" alt="전환당 비용 낮은 키워드 TOP 10" onerror="this.style.display='none'">
+          <img src="{{ extra_charts.growth_keywords_cpa_top10 }}?v={{ build_info.sha_short }}" alt="전환당 비용 낮은 키워드 TOP 10" onerror="this.style.display='none'">
         </div>
         {% endif %}
         {% if extra_charts.growth_landing_cpa_top10 %}
         <div class="chart-card">
           <div class="chart-title">랜딩페이지 전환/전환당 비용 TOP 10</div>
-          <img src="{{ extra_charts.growth_landing_cpa_top10 }}" alt="랜딩페이지 전환/전환당 비용 TOP 10" onerror="this.style.display='none'">
+          <img src="{{ extra_charts.growth_landing_cpa_top10 }}?v={{ build_info.sha_short }}" alt="랜딩페이지 전환/전환당 비용 TOP 10" onerror="this.style.display='none'">
         </div>
         {% endif %}
         {% if extra_charts.device_cpa_compare %}
         <div class="chart-card">
           <div class="chart-title">기기별 전환/전환당 비용</div>
-          <img src="{{ extra_charts.device_cpa_compare }}" alt="기기별 전환/전환당 비용" onerror="this.style.display='none'">
+          <img src="{{ extra_charts.device_cpa_compare }}?v={{ build_info.sha_short }}" alt="기기별 전환/전환당 비용" onerror="this.style.display='none'">
         </div>
         {% endif %}
       </div>
@@ -734,7 +740,7 @@
     <section class="section">
       <div class="section-title">왜 이런지 빠르게 보기</div>
       {% if weekday_chart_path %}
-      <img class="chart-image" src="{{ weekday_chart_path }}" alt="요일별 전환" onerror="this.style.display='none'">
+      <img class="chart-image" src="{{ weekday_chart_path }}?v={{ build_info.sha_short }}" alt="요일별 전환" onerror="this.style.display='none'">
       <div class="chart-note">
         <strong>의미:</strong>
         <ul>
@@ -749,7 +755,7 @@
       {% endif %}
       {% if extra_charts.hour_weekday_heatmap %}
       <div class="divider"></div>
-      <img class="chart-image" src="{{ extra_charts.hour_weekday_heatmap }}" alt="시간대별 전환" onerror="this.style.display='none'">
+      <img class="chart-image" src="{{ extra_charts.hour_weekday_heatmap }}?v={{ build_info.sha_short }}" alt="시간대별 전환" onerror="this.style.display='none'">
       <div class="chart-note">
         <strong>의미:</strong> 요일 x 시간대별 전환 분포입니다.<br>
         <strong>해석:</strong> 전환이 몰리는 시간대에 예산/입찰을 집중하세요.
@@ -770,7 +776,7 @@
           {% for chart in charts %}
           <div class="chart-card">
             <div class="chart-title">{{ chart.title }}</div>
-            <img src="{{ chart.path }}" alt="{{ chart.title }}" onerror="this.style.display='none'">
+            <img src="{{ chart.path }}?v={{ build_info.sha_short }}" alt="{{ chart.title }}" onerror="this.style.display='none'">
           </div>
           {% endfor %}
         </div>
