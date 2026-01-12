@@ -2,13 +2,10 @@
 HueLight GA4/Google Ads 일일 리포트 생성기
 """
 
-import csv
-import io
 import json
 import os
 import sys
 import textwrap
-import urllib.request
 from datetime import date, datetime, timedelta
 from pathlib import Path
 from zoneinfo import ZoneInfo
@@ -1297,143 +1294,6 @@ class ReportGenerator:
         yesterday_block = build_block(end - timedelta(days=1), "어제(확정)", pending_if_empty=False)
         return {"blocks": [today_block, yesterday_block]}
 
-    def _load_inquiry_log(self, end: date) -> dict:
-        log_url = os.getenv("INQUIRY_LOG_URL", "").strip()
-        log_path = os.getenv("INQUIRY_LOG_PATH", "").strip()
-        if not log_path:
-            report_path = Path(f"reports/{end.isoformat()}/inquiries.csv")
-            root_path = Path("inquiries.csv")
-            if report_path.exists():
-                log_path = str(report_path)
-            elif root_path.exists():
-                log_path = str(root_path)
-
-        try:
-            if log_url:
-                print(f"[INFO] 문의 로그 URL 로드: {log_url}")
-                with urllib.request.urlopen(log_url, timeout=10) as response:
-                    content = response.read().decode("utf-8-sig")
-            elif log_path:
-                print(f"[INFO] 문의 로그 파일 로드: {log_path}")
-                content = Path(log_path).read_text(encoding="utf-8-sig")
-            else:
-                print("[WARN] 문의 데이터 소스 로드 실패: INQUIRY_LOG_PATH/URL 없음")
-                return {"status": "missing", "rows": []}
-        except Exception as exc:
-            print(f"[WARN] 문의 데이터 소스 로드 실패: {exc}")
-            return {"status": "missing", "rows": []}
-
-        reader = csv.DictReader(io.StringIO(content))
-        rows = []
-        for row in reader:
-            normalized = self._normalize_inquiry_row(row)
-            if normalized:
-                rows.append(normalized)
-        print(f"[INFO] 문의 로그 rows={len(rows)}")
-        return {"status": "ok", "rows": rows}
-
-    def _normalize_inquiry_row(self, row: dict) -> dict | None:
-        timestamp = self._parse_inquiry_timestamp(row)
-        if not timestamp:
-            return None
-        date_kst = timestamp.date().isoformat()
-        source = self._get_inquiry_field(row, ["source", "utm_source", "sessionSource", "source/medium", "source_medium"])
-        medium = self._get_inquiry_field(row, ["medium", "utm_medium", "sessionMedium", "source/medium", "source_medium"])
-        if source and "/" in source and not medium:
-            parts = [part.strip() for part in source.split("/", 1)]
-            if len(parts) == 2:
-                source, medium = parts
-        if medium and "/" in medium and not source:
-            parts = [part.strip() for part in medium.split("/", 1)]
-            if len(parts) == 2:
-                source, medium = parts
-        channel = self._get_inquiry_field(
-            row,
-            ["channel", "channel_group", "channelGrouping", "default_channel_group", "traffic_channel"],
-        )
-        return {
-            "timestamp": timestamp,
-            "date_kst": date_kst,
-            "country": self._get_inquiry_field(row, ["country", "geo", "location"]),
-            "email": self._get_inquiry_field(row, ["email", "user_email", "email_address", "mail"]),
-            "source": (source or "").strip(),
-            "medium": (medium or "").strip(),
-            "channel": (channel or "").strip(),
-            "referrer": self._get_inquiry_field(row, ["referrer", "referer", "referral", "http_referer"]),
-            "landing": self._get_inquiry_field(
-                row,
-                ["landing", "landing_page", "landing_page_path", "page", "page_path", "landingPage", "landingPagePlusQueryString"],
-            ),
-            "gclid": self._get_inquiry_field(row, ["gclid", "gclid_id"]),
-        }
-
-    def _parse_inquiry_timestamp(self, row: dict) -> datetime | None:
-        value = self._get_inquiry_field(
-            row,
-            ["timestamp", "created_at", "submitted_at", "datetime", "date", "time", "createdAt", "문의일시"],
-        )
-        if not value:
-            return None
-        value = value.strip()
-        try:
-            dt = datetime.fromisoformat(value.replace("Z", "+00:00"))
-        except Exception:
-            dt = None
-        if dt is None:
-            for fmt in ("%Y-%m-%d %H:%M:%S", "%Y-%m-%d %H:%M", "%Y/%m/%d %H:%M:%S", "%Y/%m/%d %H:%M", "%Y-%m-%d"):
-                try:
-                    dt = datetime.strptime(value, fmt)
-                    break
-                except Exception:
-                    continue
-        if dt is None:
-            return None
-        if dt.tzinfo is None:
-            dt = dt.replace(tzinfo=ZoneInfo(TIMEZONE))
-        return dt.astimezone(ZoneInfo(TIMEZONE))
-
-    def _get_inquiry_field(self, row: dict, keys: list[str]) -> str:
-        for key in keys:
-            if key in row and str(row[key]).strip():
-                return str(row[key]).strip()
-        for original, value in row.items():
-            if original is None:
-                continue
-            lowered = str(original).strip().lower()
-            for key in keys:
-                if lowered == key.lower():
-                    if str(value).strip():
-                        return str(value).strip()
-        return ""
-
-    def _classify_inquiry_channel(self, row: dict) -> str:
-        source = (row.get("source") or "").lower()
-        medium = (row.get("medium") or "").lower()
-        channel = (row.get("channel") or "").lower()
-        referrer = (row.get("referrer") or "").strip()
-        landing = (row.get("landing") or "").strip()
-        gclid = (row.get("gclid") or "").strip()
-
-        if gclid or medium in ("cpc", "ppc", "paidsearch") or "paid search" in medium or "paid search" in channel:
-            return "ads"
-        if source == "google" and medium == "cpc":
-            return "ads"
-        if medium == "organic" or (source == "google" and medium == "organic"):
-            return "seo"
-        if source == "(direct)" and medium == "(none)":
-            return "direct"
-        if not referrer and landing in ("/contact", "/contact/"):
-            return "direct"
-        return "other"
-
-    def _mask_email(self, value: str) -> str:
-        if not value or "@" not in value:
-            return value or "-"
-        name, domain = value.split("@", 1)
-        if not name:
-            name = "*"
-        return f"{name[:1]}***@{domain}"
-
     def _build_monthly_summary(
         self,
         start: date,
@@ -1487,6 +1347,7 @@ class ReportGenerator:
         date_keys = iso_date_range(start_limit, end)
 
         ads_by_month = {key: 0.0 for key in month_keys}
+        ads_cost_by_month = {key: 0.0 for key in month_keys}
         sessions_by_month = {key: 0.0 for key in month_keys}
         active_by_month = {key: 0.0 for key in month_keys}
 
@@ -1496,12 +1357,13 @@ class ReportGenerator:
                 continue
             if date_key in ads_daily:
                 ads_by_month[month_key] += ads_daily[date_key]["conversions"]
+                ads_cost_by_month[month_key] += ads_daily[date_key]["cost"]
             if date_key in ga4_daily:
                 sessions_by_month[month_key] += float(ga4_daily[date_key]["sessions"])
                 active_by_month[month_key] += float(ga4_daily[date_key]["activeUsers"])
 
         seo_by_month = {key: 0.0 for key in month_keys}
-        seo_has_data = False
+        seo_query_ok = False
         try:
             rows = self.ga4.run_report(
                 ["date", "eventName", "sessionMedium"],
@@ -1510,21 +1372,20 @@ class ReportGenerator:
                 end.isoformat(),
                 limit=100000,
             )
-            if rows:
-                seo_has_data = True
-                for row in rows:
-                    event_name = (row.get("eventName") or "").lower()
-                    if event_name not in INQUIRY_EVENTS:
-                        continue
-                    if row.get("sessionMedium") != "organic":
-                        continue
-                    date_key = parse_ga4_date(row.get("date", ""))
-                    month_key = date_key[:7]
-                    if month_key not in seo_by_month:
-                        continue
-                    seo_by_month[month_key] += float(row.get("eventCount", 0))
+            seo_query_ok = True
+            for row in rows:
+                event_name = (row.get("eventName") or "").lower()
+                if event_name not in INQUIRY_EVENT_NAMES:
+                    continue
+                if row.get("sessionMedium") != "organic":
+                    continue
+                date_key = parse_ga4_date(row.get("date", ""))
+                month_key = date_key[:7]
+                if month_key not in seo_by_month:
+                    continue
+                seo_by_month[month_key] += float(row.get("eventCount", 0))
         except Exception:
-            seo_has_data = False
+            seo_query_ok = False
 
         visitor_label = "월별 방문자 수(활성 사용자)"
         visitor_values: list[float] = []
@@ -1541,14 +1402,25 @@ class ReportGenerator:
 
         ads_values = [ads_by_month[key] for key in month_keys]
         seo_values = [seo_by_month[key] for key in month_keys]
-        total_values = [ads_by_month[key] + seo_by_month[key] for key in month_keys]
-        total_has_data = ads_has_data and seo_has_data
+        ads_cost_values = [ads_cost_by_month[key] for key in month_keys]
+        seo_has_data = seo_query_ok
+        total_values = [
+            (ads_by_month[key] if ads_has_data else 0.0) + (seo_by_month[key] if seo_has_data else 0.0)
+            for key in month_keys
+        ]
+        total_has_data = ads_has_data or seo_has_data
+        total_note = "유입 채널 전체 전환 추세를 빠르게 확인하세요."
+        if not ads_has_data:
+            total_note = "Ads 전환 데이터가 없어 SEO 전환만 반영했습니다."
+        elif not seo_has_data:
+            total_note = "SEO 전환 이벤트가 없어 Ads 전환만 반영했습니다."
 
         return {
             "months": month_keys,
             "ads_conversions": ads_values,
             "seo_conversions": seo_values,
             "total_conversions": total_values,
+            "ads_cost": ads_cost_values,
             "visitors": visitor_values,
             "ads_has_data": ads_has_data,
             "seo_has_data": seo_has_data,
@@ -1572,7 +1444,13 @@ class ReportGenerator:
                     "key": "monthly_total_conversions",
                     "label": "월별 총 전환 수 (Ads + SEO)",
                     "has_data": total_has_data,
-                    "note": "유입 채널 전체 전환 추세를 빠르게 확인하세요.",
+                    "note": total_note,
+                },
+                {
+                    "key": "monthly_ads_cost",
+                    "label": "월별 광고비 (Google Ads)",
+                    "has_data": ads_has_data,
+                    "note": "월별 광고비 흐름을 보고 예산/캠페인 조정을 판단하세요.",
                 },
                 {
                     "key": "monthly_visitors",
@@ -2234,6 +2112,15 @@ class ReportGenerator:
                 "value_format": "number",
                 "figsize": CHART_FIGSIZE_WIDE,
             }
+            specs["monthly_ads_cost"] = {
+                "type": "bar",
+                "title": "월별 광고비 (Google Ads)",
+                "labels": month_labels,
+                "values": monthly_summary.get("ads_cost", []),
+                "has_data": True,
+                "value_format": "currency",
+                "figsize": CHART_FIGSIZE_WIDE,
+            }
         if month_labels and monthly_summary.get("seo_has_data"):
             specs["monthly_seo_conversions"] = {
                 "type": "bar",
@@ -2688,6 +2575,7 @@ class ReportGenerator:
                 "weekday_conversions": "weekday_conversions.png",
                 "hour_weekday_heatmap": "hour_weekday_heatmap.png",
                 "monthly_ads_conversions": "monthly_ads_conversions.png",
+                "monthly_ads_cost": "monthly_ads_cost.png",
                 "monthly_seo_conversions": "monthly_seo_conversions.png",
                 "monthly_total_conversions": "monthly_total_conversions.png",
                 "monthly_visitors": "monthly_visitors.png",
