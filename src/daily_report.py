@@ -101,6 +101,18 @@ def format_percent(value: float, digits: int = 0) -> str:
     return f"{value:,.{digits}f}%"
 
 
+def format_duration(value: float) -> str:
+    seconds = int(round(value))
+    if seconds < 0:
+        seconds = 0
+    hours = seconds // 3600
+    minutes = (seconds % 3600) // 60
+    secs = seconds % 60
+    if hours > 0:
+        return f"{hours:d}:{minutes:02d}:{secs:02d}"
+    return f"{minutes:d}:{secs:02d}"
+
+
 def format_delta(current: float, previous: float) -> str | None:
     if previous == 0:
         return None
@@ -1321,6 +1333,13 @@ class ReportGenerator:
         ga4_has_data: bool,
         ads_has_data: bool,
     ) -> dict:
+        def format_year_month(value: str) -> str | None:
+            if len(value) == 6 and value.isdigit():
+                return f"{value[:4]}-{value[4:]}"
+            if len(value) == 7 and "-" in value:
+                return value
+            return None
+
         def parse_date_key(value: str) -> date | None:
             try:
                 return datetime.strptime(value, "%Y-%m-%d").date()
@@ -1405,6 +1424,35 @@ class ReportGenerator:
         except Exception:
             seo_query_ok = False
 
+        avg_session_duration = {key: 0.0 for key in month_keys}
+        avg_duration_has_data = False
+        avg_engagement_duration = {key: 0.0 for key in month_keys}
+        avg_engagement_has_data = False
+        try:
+            rows = self.ga4.run_report(
+                ["yearMonth"],
+                ["averageSessionDuration", "userEngagementDuration", "sessions"],
+                start_limit.isoformat(),
+                end.isoformat(),
+                limit=1000,
+            )
+            for row in rows:
+                month_key = format_year_month(row.get("yearMonth", ""))
+                if not month_key or month_key not in avg_session_duration:
+                    continue
+                avg_session_duration[month_key] = float(row.get("averageSessionDuration", 0))
+                sessions = float(row.get("sessions", 0))
+                engagement = float(row.get("userEngagementDuration", 0))
+                if sessions > 0:
+                    avg_engagement_duration[month_key] = engagement / sessions
+            if any(avg_session_duration.values()):
+                avg_duration_has_data = True
+            if any(avg_engagement_duration.values()):
+                avg_engagement_has_data = True
+        except Exception:
+            avg_duration_has_data = False
+            avg_engagement_has_data = False
+
         visitor_label = "월별 방문자 수(활성 사용자)"
         visitor_values: list[float] = []
         visitors_has_data = False
@@ -1439,11 +1487,15 @@ class ReportGenerator:
             "seo_conversions": seo_values,
             "total_conversions": total_values,
             "ads_cost": ads_cost_values,
+            "avg_session_duration": [avg_session_duration[key] for key in month_keys],
+            "avg_engagement_duration": [avg_engagement_duration[key] for key in month_keys],
             "visitors": visitor_values,
             "ads_has_data": ads_has_data,
             "seo_has_data": seo_has_data,
             "total_has_data": total_has_data,
             "visitors_has_data": visitors_has_data,
+            "avg_session_duration_has_data": avg_duration_has_data,
+            "avg_engagement_duration_has_data": avg_engagement_has_data,
             "visitor_label": visitor_label,
             "cards": [
                 {
@@ -1469,6 +1521,18 @@ class ReportGenerator:
                     "label": "월별 광고비 (Google Ads)",
                     "has_data": ads_has_data,
                     "note": "월별 광고비 흐름을 보고 예산/캠페인 조정을 판단하세요.",
+                },
+                {
+                    "key": "monthly_avg_session_duration",
+                    "label": "월별 평균 체류시간 (GA4)",
+                    "has_data": avg_duration_has_data,
+                    "note": "월별 평균 체류시간 변화로 콘텐츠/랜딩 품질을 점검하세요.",
+                },
+                {
+                    "key": "monthly_avg_engagement_duration",
+                    "label": "월별 세션당 평균 참여시간",
+                    "has_data": avg_engagement_has_data,
+                    "note": "참여시간은 세션 품질을 보여줍니다.",
                 },
                 {
                     "key": "monthly_visitors",
@@ -2273,6 +2337,26 @@ class ReportGenerator:
                 "value_format": "currency",
                 "figsize": CHART_FIGSIZE_WIDE,
             }
+        if month_labels and monthly_summary.get("avg_session_duration_has_data"):
+            specs["monthly_avg_session_duration"] = {
+                "type": "bar",
+                "title": "월별 평균 체류시간 (GA4)",
+                "labels": month_labels,
+                "values": monthly_summary.get("avg_session_duration", []),
+                "has_data": True,
+                "value_format": "duration",
+                "figsize": CHART_FIGSIZE_WIDE,
+            }
+        if month_labels and monthly_summary.get("avg_engagement_duration_has_data"):
+            specs["monthly_avg_engagement_duration"] = {
+                "type": "bar",
+                "title": "월별 세션당 평균 참여시간",
+                "labels": month_labels,
+                "values": monthly_summary.get("avg_engagement_duration", []),
+                "has_data": True,
+                "value_format": "duration",
+                "figsize": CHART_FIGSIZE_WIDE,
+            }
         if month_labels and monthly_summary.get("seo_has_data"):
             specs["monthly_seo_conversions"] = {
                 "type": "bar",
@@ -2545,6 +2629,8 @@ class ReportGenerator:
             return format_currency(value)
         if value_format == "percent":
             return format_percent(value, 0)
+        if value_format == "duration":
+            return format_duration(value)
         return format_int(value)
 
     def _plot_chart(
@@ -2773,6 +2859,8 @@ class ReportGenerator:
                 "monthly_ads_cost": "monthly_ads_cost.png",
                 "monthly_seo_conversions": "monthly_seo_conversions.png",
                 "monthly_total_conversions": "monthly_total_conversions.png",
+                "monthly_avg_session_duration": "monthly_avg_session_duration.png",
+                "monthly_avg_engagement_duration": "monthly_avg_engagement_duration.png",
                 "monthly_visitors": "monthly_visitors.png",
                 "weekly_active_users": "weekly_active_users.png",
             }.get(key)
