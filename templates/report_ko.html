@@ -940,6 +940,44 @@
             </tbody>
           </table>
         </div>
+        <div class="divider"></div>
+        <div class="chart-title">Ads 전환 진단(디버그)</div>
+        <div class="note">
+          대시보드는 KST 기준 어제를 사용합니다. Ads 보고 날짜는 계정 타임존 영향이 있을 수 있습니다.
+          (Ads timezone: {{ ads_conversion_debug.timezone }})
+        </div>
+        {% if ads_conversion_debug.rows %}
+        <div class="note">Ads 전환 {{ ads_conversion_debug.total_conversions }} / 전체전환 {{ ads_conversion_debug.total_all_conversions }}</div>
+        <div class="note">{{ ads_conversion_debug.note }}</div>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>날짜</th>
+                <th>전환 액션</th>
+                <th>include_in_conversions_metric</th>
+                <th>counting_type</th>
+                <th>conversions</th>
+                <th>all_conversions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for row in ads_conversion_debug.rows %}
+              <tr>
+                <td>{{ row.date }}</td>
+                <td>{{ row.action }}</td>
+                <td>{{ row.include }}</td>
+                <td>{{ row.counting }}</td>
+                <td>{{ row.conversions }}</td>
+                <td>{{ row.all_conversions }}</td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+        {% else %}
+        <div class="empty-state">진단 데이터 없음</div>
+        {% endif %}
       </details>
     </section>
 

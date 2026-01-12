@@ -273,6 +273,7 @@ class ReportGenerator:
             prev_search_terms = self._get_ads_search_term_waste(prev_7_start, prev_7_end)
             prev_wasted_summary = self._build_wasted_summary(prev_7_dates, ads_daily, prev_keyword_tables, prev_search_terms)
         conversion_definitions = self._get_conversion_definitions(last_30_complete_start, last_30_end)
+        ads_conversion_debug = self._build_ads_conversion_debug(end - timedelta(days=1))
         landing_page_stats = self._get_ads_landing_page_stats(last_7_start, last_7_end)
         device_stats = self._get_device_stats(last_7_start, last_7_end)
         weekday_stats = self._get_weekday_conversions(last_7_start, last_7_end)
@@ -356,6 +357,7 @@ class ReportGenerator:
             "search_terms": search_terms,
             "wasted_summary": wasted_summary,
             "conversion_definitions": conversion_definitions,
+            "ads_conversion_debug": ads_conversion_debug,
             "exec_summary": exec_summary,
             "today_line": today_line,
             "yesterday_line": yesterday_line,
@@ -399,14 +401,14 @@ class ReportGenerator:
     def _get_ads_daily_series(self, start_date: str, end_date: str, all_dates: list[str]) -> tuple[dict, bool, bool]:
         query_with_value = (
             "SELECT segments.date, metrics.impressions, metrics.clicks, metrics.cost_micros, "
-            "metrics.conversions, metrics.conversions_value "
+            "metrics.conversions, metrics.all_conversions, metrics.conversions_value "
             "FROM campaign "
             f"WHERE segments.date BETWEEN '{start_date}' AND '{end_date}' "
             "AND campaign.status != 'REMOVED'"
         )
         query_fallback = (
             "SELECT segments.date, metrics.impressions, metrics.clicks, metrics.cost_micros, "
-            "metrics.conversions "
+            "metrics.conversions, metrics.all_conversions "
             "FROM campaign "
             f"WHERE segments.date BETWEEN '{start_date}' AND '{end_date}' "
             "AND campaign.status != 'REMOVED'"
@@ -419,6 +421,7 @@ class ReportGenerator:
                 "impressions": 0,
                 "clicks": 0,
                 "conversions": 0.0,
+                "all_conversions": 0.0,
                 "conversion_value": 0.0,
             }
             for d in all_dates
@@ -432,6 +435,7 @@ class ReportGenerator:
             data[date_key]["impressions"] += row.metrics.impressions
             data[date_key]["clicks"] += row.metrics.clicks
             data[date_key]["conversions"] += row.metrics.conversions
+            data[date_key]["all_conversions"] += row.metrics.all_conversions
             conv_value = getattr(row.metrics, "conversions_value", None)
             if conv_value is not None:
                 has_conv_value = True
@@ -1263,7 +1267,13 @@ class ReportGenerator:
                 ga4_ok = False
                 ga4_pending = False
 
-            ads = ads_daily.get(target_key, {"cost": 0.0, "impressions": 0, "clicks": 0, "conversions": 0.0})
+            ads = ads_daily.get(target_key, {
+                "cost": 0.0,
+                "impressions": 0,
+                "clicks": 0,
+                "conversions": 0.0,
+                "all_conversions": 0.0,
+            })
             ads_ctr = safe_div(ads["clicks"], ads["impressions"]) * 100 if ads["impressions"] else 0.0
             ads_cpa = safe_div(ads["cost"], ads["conversions"]) if ads["conversions"] else 0.0
 
@@ -1280,7 +1290,7 @@ class ReportGenerator:
                 ("GA4 세션", sessions, format_int, True),
                 ("SEO 세션(organic)", organic_sessions, format_int, True),
                 ("Ads 비용", ads["cost"], format_currency, False),
-                ("Ads 전환", ads["conversions"], lambda v: format_count(v), False),
+                ("Ads 전환 / 전체전환", (ads["conversions"], ads["all_conversions"]), None, False),
                 ("CPA", ads_cpa, format_currency, False),
                 ("CTR", ads_ctr, lambda v: format_percent(v, 1), False),
                 ("노출", ads["impressions"], format_int, False),
@@ -1289,7 +1299,12 @@ class ReportGenerator:
                 if is_ga4:
                     value_text, tooltip = display_ga4(value, formatter)
                 else:
-                    value_text, tooltip = display(value, formatter)
+                    if isinstance(value, tuple):
+                        left = format_count(value[0])
+                        right = format_count(value[1])
+                        value_text, tooltip = f"{left} / {right}", None
+                    else:
+                        value_text, tooltip = display(value, formatter)
                 cards.append({"label": label_text, "value": value_text, "tooltip": tooltip})
             return {"label": label, "date": target_key, "cards": cards}
 
@@ -1719,6 +1734,93 @@ class ReportGenerator:
             f"전환이 가장 높은 요일은 {top_day['weekday']}입니다.",
             "요일/시간 분포를 보고 광고 노출 시간대를 조정하세요.",
         ]
+
+    def _build_ads_conversion_debug(self, target_date: date) -> dict:
+        target = target_date.isoformat()
+        timezone = "unknown"
+        try:
+            tz_rows = self.ads.run_query("SELECT customer.time_zone FROM customer LIMIT 1")
+            if tz_rows:
+                timezone = tz_rows[0].customer.time_zone
+        except Exception:
+            timezone = "unknown"
+
+        query = (
+            "SELECT segments.date, segments.conversion_action, segments.conversion_action_name, "
+            "metrics.conversions, metrics.all_conversions "
+            "FROM customer "
+            f"WHERE segments.date = '{target}'"
+        )
+        try:
+            rows = self.ads.run_query(query)
+        except Exception:
+            return {
+                "date": target,
+                "timezone": timezone,
+                "rows": [],
+                "note": "진단 데이터 없음",
+            }
+
+        action_ids = {row.segments.conversion_action for row in rows if row.segments.conversion_action}
+        action_map = {}
+        if action_ids:
+            action_query = (
+                "SELECT conversion_action.id, conversion_action.name, "
+                "conversion_action.include_in_conversions_metric, conversion_action.counting_type "
+                "FROM conversion_action "
+                "WHERE conversion_action.status = 'ENABLED'"
+            )
+            try:
+                action_rows = self.ads.run_query(action_query)
+                for row in action_rows:
+                    action_map[row.conversion_action.resource_name] = {
+                        "id": row.conversion_action.id,
+                        "name": row.conversion_action.name,
+                        "include": row.conversion_action.include_in_conversions_metric,
+                        "counting": row.conversion_action.counting_type,
+                    }
+            except Exception:
+                action_map = {}
+
+        table_rows = []
+        total_conv = 0.0
+        total_all = 0.0
+        for row in rows:
+            conv = row.metrics.conversions
+            all_conv = row.metrics.all_conversions
+            total_conv += conv
+            total_all += all_conv
+            action_resource = row.segments.conversion_action
+            info = action_map.get(action_resource, {})
+            table_rows.append({
+                "date": row.segments.date,
+                "action": row.segments.conversion_action_name or info.get("name") or action_resource or "-",
+                "include": info.get("include", "unknown"),
+                "counting": str(info.get("counting", "unknown")),
+                "conversions": format_int(conv),
+                "all_conversions": format_int(all_conv),
+            })
+
+        note = ""
+        if total_all > total_conv:
+            has_secondary = any(row["include"] is False for row in table_rows)
+            if has_secondary:
+                note = "전체 전환이 더 큰 이유: Secondary(Primary 제외) 전환이 포함되어 있습니다."
+            else:
+                note = "전체 전환이 더 큰 이유: counting_type 또는 날짜 귀속 차이 가능성이 있습니다."
+        elif total_all == total_conv:
+            note = "전환/전체전환이 동일합니다."
+        else:
+            note = "전체 전환이 전환보다 작습니다. 설정 확인이 필요합니다."
+
+        return {
+            "date": target,
+            "timezone": timezone,
+            "rows": table_rows,
+            "note": note,
+            "total_conversions": format_int(total_conv),
+            "total_all_conversions": format_int(total_all),
+        }
 
     def _build_final_conclusion(
         self,
@@ -2730,6 +2832,7 @@ def build_render_context(
         "search_terms": report_data["search_terms"],
         "wasted_summary": report_data["wasted_summary"],
         "conversion_definitions": report_data["conversion_definitions"],
+        "ads_conversion_debug": report_data["ads_conversion_debug"],
         "exec_summary": report_data["exec_summary"],
         "today_line": report_data["today_line"],
         "yesterday_line": report_data["yesterday_line"],
