@@ -1219,15 +1219,21 @@ class ReportGenerator:
         ads_inquiries = None
         direct_inquiries = None
         other_inquiries = None
-        ga4_today_has_data = False
+        traffic_ok = False
+        inquiry_status = "missing"
         ga4_today_sessions = None
         ga4_today_active = None
         try:
+            print("[INFO] today_traffic_report: dimensions=[], metrics=[sessions,activeUsers], filter=none")
+            print(f"[INFO] today_traffic_report: range={today}~{today}")
             totals = self.ga4.run_report([], ["sessions", "activeUsers"], today, today)
             if totals:
-                ga4_today_has_data = True
+                traffic_ok = True
                 ga4_today_sessions = float(totals[0].get("sessions", 0))
                 ga4_today_active = float(totals[0].get("activeUsers", 0))
+                print(f"[INFO] today_traffic_report: rows={len(totals)}, sessions={ga4_today_sessions}, activeUsers={ga4_today_active}")
+            else:
+                print("[INFO] today_traffic_report: rows=0")
             rows = self.ga4.run_report(
                 ["eventName", "sessionSource", "sessionMedium"],
                 ["eventCount"],
@@ -1235,22 +1241,20 @@ class ReportGenerator:
                 today,
                 limit=10000,
             )
-            if rows:
-                ga4_today_has_data = True
+            print("[INFO] today_inquiry_report: dimensions=[eventName,sessionSource,sessionMedium], metrics=[eventCount], filter=eventName whitelist")
+            print(f"[INFO] today_inquiry_report: range={today}~{today}, rows={len(rows)}")
             total_inquiries = 0.0
             seo_inquiries = 0.0
             ads_inquiries = 0.0
             direct_inquiries = 0.0
             other_inquiries = 0.0
-            inquiry_found = False
-            matched_events = set()
+            matched_events = {}
             for row in rows:
                 event_name = (row.get("eventName") or "").lower()
                 if event_name not in INQUIRY_EVENT_NAMES:
                     continue
-                inquiry_found = True
-                matched_events.add(event_name)
                 count = float(row.get("eventCount", 0))
+                matched_events[event_name] = matched_events.get(event_name, 0) + count
                 total_inquiries += count
                 source = (row.get("sessionSource") or "").lower()
                 medium = (row.get("sessionMedium") or "").lower()
@@ -1262,20 +1266,24 @@ class ReportGenerator:
                     direct_inquiries += count
                 else:
                     other_inquiries += count
-            if inquiry_found:
-                print(f"[INFO] 문의 이벤트 집계됨: {', '.join(sorted(matched_events))}")
+            if matched_events:
+                inquiry_status = "ok"
+                events_summary = ", ".join(
+                    f"{name}:{format_int(value)}" for name, value in sorted(matched_events.items())
+                )
+                print(f"[INFO] today_inquiry_report: events={events_summary}")
+            elif rows:
+                inquiry_status = "ok"
+                print("[INFO] today_inquiry_report: 문의 이벤트 없음(0건)")
             else:
-                total_inquiries = None
-                seo_inquiries = None
-                ads_inquiries = None
-                direct_inquiries = None
-                other_inquiries = None
+                inquiry_status = "pending" if traffic_ok else "missing"
         except Exception:
             total_inquiries = None
             seo_inquiries = None
             ads_inquiries = None
             direct_inquiries = None
             other_inquiries = None
+            inquiry_status = "missing"
 
         visitors = ga4_today_active
 
@@ -1333,13 +1341,20 @@ class ReportGenerator:
                 return formatter(value), None
             return str(value), None
 
-        def display_ga4(value: float | str | None, formatter=None) -> tuple[str, str | None]:
-            if not ga4_today_has_data:
+        def display_traffic(value: float | str | None, formatter=None) -> tuple[str, str | None]:
+            if not traffic_ok:
                 return "데이터 없음", "GA4 오늘 데이터가 없습니다."
             return display(value, formatter)
 
+        def display_inquiry(value: float | str | None, formatter=None) -> tuple[str, str | None]:
+            if inquiry_status == "pending":
+                return "집계중", "GA4 당일 이벤트 집계 지연 가능"
+            if inquiry_status == "missing":
+                return "데이터 없음", "GA4 오늘 문의 이벤트 데이터가 없습니다."
+            return display(value, formatter)
+
         visitor_label = "오늘 방문자 수(활성 사용자)"
-        if ga4_today_has_data and (visitors is None or (visitors == 0 and ga4_today_sessions and ga4_today_sessions > 0)):
+        if traffic_ok and (visitors is None or (visitors == 0 and ga4_today_sessions and ga4_today_sessions > 0)):
             visitors = ga4_today_sessions
             visitor_label = "오늘 방문자 수(세션)"
 
@@ -1367,7 +1382,10 @@ class ReportGenerator:
                 "오늘 기타 문의 수(폼 제출)",
                 "오늘 가장 많이 본 페이지",
             ):
-                value_text, tooltip = display_ga4(value, formatter)
+                if "문의 수(폼 제출)" in label:
+                    value_text, tooltip = display_inquiry(value, formatter)
+                else:
+                    value_text, tooltip = display_traffic(value, formatter)
             else:
                 value_text, tooltip = display(value, formatter)
             cards.append({"label": label, "value": value_text, "tooltip": tooltip})
