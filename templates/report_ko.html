@@ -393,6 +393,16 @@
       cursor: pointer;
       margin-bottom: 10px;
     }
+    .badge {
+      display: inline-block;
+      padding: 2px 6px;
+      border-radius: 999px;
+      font-size: 11px;
+      margin-left: 6px;
+      border: 1px solid #fecaca;
+      background: #fee2e2;
+      color: #991b1b;
+    }
     .footer-space { margin-top: 40px; }
     @media (max-width: 720px) {
       .header { flex-direction: column; align-items: flex-start; }
@@ -461,6 +471,60 @@
         <div class="empty-state">해당 기간에 방문자 데이터가 없습니다.</div>
         {% endif %}
       </div>
+    </section>
+    <section class="section">
+      <div class="section-title">현재 진행 중인 키워드 (최근 7일)</div>
+      <div class="note">총 {{ active_keywords_7d.total }}개 키워드</div>
+      {% if active_keywords_7d.rows %}
+      <details open>
+        <summary>테이블 펼치기/접기</summary>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>캠페인</th>
+                <th>광고그룹</th>
+                <th>키워드</th>
+                <th>매칭타입</th>
+                <th>상태</th>
+                <th>비용</th>
+                <th>노출</th>
+                <th>클릭</th>
+                <th>CTR</th>
+                <th>전환</th>
+                <th>전체전환</th>
+                <th>CPA</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for row in active_keywords_7d.rows %}
+              <tr>
+                <td>{{ row.campaign }}</td>
+                <td>{{ row.ad_group }}</td>
+                <td>{{ row.keyword }}</td>
+                <td>{{ row.match_type }}</td>
+                <td>{{ row.status }}</td>
+                <td>{{ row.cost_display }}</td>
+                <td>{{ row.impressions_display }}</td>
+                <td>{{ row.clicks_display }}</td>
+                <td>{{ row.ctr_display }}</td>
+                <td>
+                  {{ row.conversions_display }}
+                  {% if row.waste %}
+                  <span class="badge">낭비</span>
+                  {% endif %}
+                </td>
+                <td>{{ row.all_conversions_display }}</td>
+                <td>{{ row.cpa_display }}</td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </details>
+      {% else %}
+      <div class="empty-state">데이터 없음</div>
+      {% endif %}
     </section>
     <section class="section">
       <div class="section-title">월간 요약 (최근 12개월)</div>

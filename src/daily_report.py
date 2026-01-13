@@ -255,6 +255,7 @@ class ReportGenerator:
         keyword_tables = self._get_ads_keyword_tables(last_7_start, last_7_end, last_30_complete_start, last_30_end)
         search_terms = self._get_ads_search_term_waste(last_7_start, last_7_end)
         wasted_summary = self._build_wasted_summary(last_7_dates, ads_daily, keyword_tables, search_terms)
+        active_keywords_7d = self._build_active_keywords_table(last_7_start, last_7_end)
         today_date = end
         yesterday_date = end - timedelta(days=1)
         today_keyword_rows = self._get_ads_keyword_rows(today_date, today_date)
@@ -368,6 +369,7 @@ class ReportGenerator:
             "keyword_tables": keyword_tables,
             "search_terms": search_terms,
             "wasted_summary": wasted_summary,
+            "active_keywords_7d": active_keywords_7d,
             "conversion_definitions": conversion_definitions,
             "ads_conversion_debug": ads_conversion_debug,
             "exec_summary": exec_summary,
@@ -863,6 +865,67 @@ class ReportGenerator:
                 "cpa_micros": row.metrics.cost_per_conversion,
             })
         return results
+
+    def _build_active_keywords_table(self, start_date: date, end_date: date) -> dict:
+        if start_date > end_date:
+            return {"rows": [], "total": 0}
+        start = start_date.isoformat()
+        end = end_date.isoformat()
+        query = (
+            "SELECT campaign.name, ad_group.name, ad_group_criterion.keyword.text, "
+            "ad_group_criterion.keyword.match_type, ad_group_criterion.status, "
+            "metrics.impressions, metrics.clicks, metrics.ctr, metrics.cost_micros, "
+            "metrics.conversions, metrics.all_conversions, metrics.cost_per_conversion "
+            "FROM keyword_view "
+            f"WHERE segments.date BETWEEN '{start}' AND '{end}' "
+            "AND campaign.advertising_channel_type = 'SEARCH' "
+            "AND campaign.status = 'ENABLED' "
+            "AND ad_group.status = 'ENABLED' "
+            "AND ad_group_criterion.status = 'ENABLED' "
+            "AND (metrics.impressions > 0 OR metrics.clicks > 0)"
+        )
+        rows = self.ads.run_query(query)
+        raw_rows = []
+        for row in rows:
+            keyword = row.ad_group_criterion.keyword
+            raw_rows.append({
+                "campaign": row.campaign.name,
+                "ad_group": row.ad_group.name,
+                "keyword": keyword.text,
+                "match_type": str(keyword.match_type),
+                "status": str(row.ad_group_criterion.status),
+                "impressions": row.metrics.impressions,
+                "clicks": row.metrics.clicks,
+                "ctr": row.metrics.ctr,
+                "cost_micros": row.metrics.cost_micros,
+                "conversions": row.metrics.conversions,
+                "all_conversions": row.metrics.all_conversions,
+                "cpa_micros": row.metrics.cost_per_conversion,
+            })
+        raw_rows.sort(key=lambda item: item.get("cost_micros", 0), reverse=True)
+        formatted_rows = []
+        for row in raw_rows:
+            cost = row["cost_micros"] / 1_000_000
+            conversions = row["conversions"] or 0
+            all_conversions = row["all_conversions"] or 0
+            ctr = row["ctr"] * 100 if row["ctr"] else safe_div(row["clicks"], row["impressions"]) * 100
+            cpa = row["cpa_micros"] / 1_000_000 if row["cpa_micros"] else safe_div(cost, conversions)
+            formatted_rows.append({
+                "campaign": row["campaign"],
+                "ad_group": row["ad_group"],
+                "keyword": row["keyword"],
+                "match_type": self._format_match_type(row["match_type"]),
+                "status": row["status"],
+                "cost_display": format_currency(cost),
+                "impressions_display": format_int(row["impressions"]),
+                "clicks_display": format_int(row["clicks"]),
+                "ctr_display": f"{format_float(ctr, 2)}%",
+                "conversions_display": format_float(conversions, 1),
+                "all_conversions_display": format_float(all_conversions, 1),
+                "cpa_display": format_currency(cpa) if conversions else "-",
+                "waste": cost > 0 and conversions == 0,
+            })
+        return {"rows": formatted_rows, "total": len(formatted_rows)}
 
     def _format_match_type(self, match_type: str) -> str:
         mapping = {
@@ -3008,6 +3071,7 @@ def build_render_context(
         "keyword_tables": report_data["keyword_tables"],
         "search_terms": report_data["search_terms"],
         "wasted_summary": report_data["wasted_summary"],
+        "active_keywords_7d": report_data["active_keywords_7d"],
         "conversion_definitions": report_data["conversion_definitions"],
         "ads_conversion_debug": report_data["ads_conversion_debug"],
         "exec_summary": report_data["exec_summary"],
