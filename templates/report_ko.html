@@ -473,11 +473,12 @@
       </div>
     </section>
     <section class="section">
+      <!-- ACTIVE_KEYWORDS_SECTION_RENDERED -->
       <div class="section-title">현재 진행 중인 키워드 (최근 7일)</div>
       <div class="note">총 {{ active_keywords_7d.total }}개 키워드</div>
-      {% if active_keywords_7d.rows %}
       <details open>
         <summary>테이블 펼치기/접기</summary>
+        {% if active_keywords_7d.rows %}
         <div class="table-wrap">
           <table>
             <thead>
@@ -521,10 +522,15 @@
             </tbody>
           </table>
         </div>
+        {% else %}
+        <div class="empty-state">
+          <div>상태: {{ active_keywords_7d.debug.status }}</div>
+          <div>에러: {{ active_keywords_7d.debug.error or "없음" }}</div>
+          <div>조회 기간: {{ active_keywords_7d.debug.query_window }}</div>
+          <div>Ads 시간대: {{ active_keywords_7d.debug.timezone }}</div>
+        </div>
+        {% endif %}
       </details>
-      {% else %}
-      <div class="empty-state">데이터 없음</div>
-      {% endif %}
     </section>
     <section class="section">
       <div class="section-title">월간 요약 (최근 12개월)</div>

@@ -206,6 +206,7 @@ class ReportGenerator:
     def __init__(self, property_id: str, customer_id: str, start_date: str, end_date: str):
         self.ga4 = GA4Client(property_id)
         self.ads = AdsClient(customer_id)
+        self.customer_id = customer_id
         self.start_date = start_date
         self.end_date = end_date
 
@@ -868,9 +869,27 @@ class ReportGenerator:
 
     def _build_active_keywords_table(self, start_date: date, end_date: date) -> dict:
         if start_date > end_date:
-            return {"rows": [], "total": 0}
+            return {
+                "rows": [],
+                "total": 0,
+                "debug": {
+                    "status": "error",
+                    "error": "기간이 올바르지 않습니다.",
+                    "query_window": f"{start_date.isoformat()} ~ {end_date.isoformat()}",
+                    "customer_id": self.customer_id,
+                    "timezone": "unknown",
+                },
+            }
         start = start_date.isoformat()
         end = end_date.isoformat()
+        timezone = "unknown"
+        try:
+            tz_rows = self.ads.run_query("SELECT customer.time_zone FROM customer LIMIT 1")
+            if tz_rows:
+                timezone = tz_rows[0].customer.time_zone
+        except Exception:
+            timezone = "unknown"
+
         query = (
             "SELECT campaign.name, ad_group.name, ad_group_criterion.keyword.text, "
             "ad_group_criterion.keyword.match_type, ad_group_criterion.status, "
@@ -882,9 +901,30 @@ class ReportGenerator:
             "AND campaign.status = 'ENABLED' "
             "AND ad_group.status = 'ENABLED' "
             "AND ad_group_criterion.status = 'ENABLED' "
-            "AND (metrics.impressions > 0 OR metrics.clicks > 0)"
+            "AND metrics.impressions > 0"
         )
-        rows = self.ads.run_query(query)
+        try:
+            rows = self.ads.run_query(query)
+            debug = {
+                "status": "success",
+                "error": "",
+                "query_window": f"{start} ~ {end}",
+                "customer_id": self.customer_id,
+                "timezone": timezone,
+            }
+        except Exception as exc:
+            error_text = " ".join(str(exc).splitlines()).strip()
+            return {
+                "rows": [],
+                "total": 0,
+                "debug": {
+                    "status": "error",
+                    "error": error_text,
+                    "query_window": f"{start} ~ {end}",
+                    "customer_id": self.customer_id,
+                    "timezone": timezone,
+                },
+            }
         raw_rows = []
         for row in rows:
             keyword = row.ad_group_criterion.keyword
@@ -925,7 +965,7 @@ class ReportGenerator:
                 "cpa_display": format_currency(cpa) if conversions else "-",
                 "waste": cost > 0 and conversions == 0,
             })
-        return {"rows": formatted_rows, "total": len(formatted_rows)}
+        return {"rows": formatted_rows, "total": len(formatted_rows), "debug": debug}
 
     def _format_match_type(self, match_type: str) -> str:
         mapping = {
