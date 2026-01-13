@@ -1,4 +1,4 @@
-# ops-ga4-ads-daily-report
+# Open-your-eyes-look-up-to-the-skies-and-see
 
 ## 로컬 실행 (원클릭)
 
@@ -16,4 +16,4 @@ cp .env.example .env
 
 ## GitHub Pages
 
-- URL: https://YOUR-ORG.github.io/YOUR-REPO/ (placeholder)
+- URL: https://franklee0001.github.io/Open-your-eyes-look-up-to-the-skies-and-see/

@@ -3474,6 +3474,17 @@ def build_render_context(
     build_run_url = ""
     if gh_server_url and gh_repo and gh_run_id:
         build_run_url = f"{gh_server_url}/{gh_repo}/actions/runs/{gh_run_id}"
+    base_path = ""
+    if custom_domain:
+        base_path = "/"
+    elif gh_repo:
+        repo_name = gh_repo.split("/")[-1]
+        base_path = f"/{repo_name}/"
+    if base_path:
+        normalized = base_path.rstrip("/") + "/"
+        chart_prefix = f"{normalized}reports/{end_date}/"
+        logo_png_path = f"{normalized}assets/huelight-logo.png"
+        logo_svg_path = f"{normalized}assets/huelight-logo.svg"
     charts = []
     for chart in report_data["charts"]:
         if not chart.get("has_data"):
